@@ -1,7 +1,8 @@
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Log, UserPreference, Goal, ConsumptionType, GoalType } from '../types';
+import { Log, UserPreference, Goal, ConsumptionType } from '../types';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import { useAuth } from './AuthContext'; // Import the useAuth hook
 
 const initialGoals: Goal[] = [];
 
@@ -44,6 +45,9 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
+  const { user } = useAuth(); // Get the authenticated user
+  const db = getFirestore();
+
   const [logs, setLogs] = useState<Log[]>([]);
   const [preferences, setPreferencesState] = useState<UserPreference>(initialPreferences);
   const [goals, setGoalsState] = useState<Goal[]>(initialGoals);
@@ -55,52 +59,42 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
 
   useEffect(() => {
     const loadState = async () => {
+      if (!user) { // If there is no user, do not load anything
+        setIsLoading(false);
+        return;
+      }
       try {
-        const storedLogs = await AsyncStorage.getItem('quit_track_logs');
-        if (storedLogs) setLogs(JSON.parse(storedLogs));
+        const userDocRef = doc(db, 'users', user.uid);
+        const userDoc = await getDoc(userDocRef);
 
-        const storedPrefs = await AsyncStorage.getItem('quit_track_prefs');
-        if (storedPrefs) {
-          setPreferencesState(prev => ({ ...initialPreferences, ...JSON.parse(storedPrefs) }));
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          setLogs(data.logs || []);
+          setPreferencesState(data.preferences || initialPreferences);
+          setGoalsState(data.goals || []);
+          setIsOnboardingComplete(data.isOnboardingComplete || false);
+          setAiSummary(data.aiSummary || '');
+        } else {
+          // If the document does not exist, it might be a new user.
+          // The initial state is already set.
         }
 
-        const storedGoals = await AsyncStorage.getItem('quit_track_goals');
-        if (storedGoals) setGoalsState(JSON.parse(storedGoals));
-
-        const onboardingStatus = await AsyncStorage.getItem('onboarding_complete');
-        if (onboardingStatus) setIsOnboardingComplete(JSON.parse(onboardingStatus));
-        
-        const storedSummary = await AsyncStorage.getItem('ai_summary');
-        if (storedSummary) setAiSummary(storedSummary);
-
       } catch (error) {
-        console.error("Failed to load state from storage", error);
+        console.error("Failed to load state from Firestore", error);
       } finally {
         setIsLoading(false);
       }
     };
     loadState();
-  }, []);
+  }, [user, db]);
 
   useEffect(() => {
-    if (!isLoading) AsyncStorage.setItem('quit_track_logs', JSON.stringify(logs));
-  }, [logs, isLoading]);
-
-  useEffect(() => {
-    if (!isLoading) AsyncStorage.setItem('quit_track_prefs', JSON.stringify(preferences));
-  }, [preferences, isLoading]);
-
-  useEffect(() => {
-    if (!isLoading) AsyncStorage.setItem('quit_track_goals', JSON.stringify(goals));
-  }, [goals, isLoading]);
-
-  useEffect(() => {
-    if (!isLoading) AsyncStorage.setItem('onboarding_complete', JSON.stringify(isOnboardingComplete));
-  }, [isOnboardingComplete, isLoading]);
-  
-  useEffect(() => {
-    if (!isLoading) AsyncStorage.setItem('ai_summary', aiSummary);
-  }, [aiSummary, isLoading]);
+    if (!isLoading && user) {
+      const userDocRef = doc(db, 'users', user.uid);
+      const dataToSave = { logs, preferences, goals, isOnboardingComplete, aiSummary };
+      setDoc(userDocRef, dataToSave, { merge: true });
+    }
+  }, [logs, preferences, goals, isOnboardingComplete, aiSummary, isLoading, user, db]);
 
   const addLog = (type: ConsumptionType) => {
     let nicotineMg = 0;
@@ -119,15 +113,23 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
   const completeOnboarding = () => setIsOnboardingComplete(true);
 
   const resetOnboarding = async () => {
+    if (!user) return;
     try {
-      await AsyncStorage.multiRemove(['quit_track_logs', 'quit_track_prefs', 'quit_track_goals', 'onboarding_complete', 'ai_summary']);
+      const userDocRef = doc(db, 'users', user.uid);
+      await setDoc(userDocRef, {
+        logs: [],
+        preferences: initialPreferences,
+        goals: [],
+        isOnboardingComplete: false,
+        aiSummary: '',
+      });
       setLogs([]);
       setPreferencesState(initialPreferences);
       setGoalsState(initialGoals);
       setAiSummary('');
       setIsOnboardingComplete(false);
     } catch (error) {
-      console.error("Failed to reset onboarding state", error);
+      console.error("Failed to reset onboarding state in Firestore", error);
     }
   };
 
