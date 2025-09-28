@@ -3,8 +3,8 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { initializeApp } from 'firebase/app';
-import { firebaseConfig } from '../firebase/config';
-import { AuthProvider, useAuth } from '../context/AuthContext';
+import { firebaseConfig } from '@/firebase/config';
+import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useEffect } from 'react';
 
@@ -12,7 +12,8 @@ import { useEffect } from 'react';
 initializeApp(firebaseConfig);
 
 export const unstable_settings = {
-  anchor: '(tabs)',
+  // Ensure that reloading on a modal keeps a back button present.
+  initialRouteName: '(tabs)',
 };
 
 const InitialLayout = () => {
@@ -26,7 +27,7 @@ const InitialLayout = () => {
     const inAuthGroup = segments[0] === '(auth)';
 
     if (!user && !inAuthGroup) {
-      router.replace('/sign-in');
+      router.replace('/(auth)/sign-in');
     } else if (user && inAuthGroup) {
       router.replace('/(tabs)');
     }
@@ -36,8 +37,8 @@ const InitialLayout = () => {
     <Stack>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      <Stack.Screen name="sign-in" options={{ headerShown: false }} />
-      <Stack.Screen name="sign-up" options={{ headerShown: false }} />
+      <Stack.Screen name="(auth)/sign-in" options={{ headerShown: false }} />
+      <Stack.Screen name="(auth)/sign-up" options={{ headerShown: false }} />
     </Stack>
   );
 };

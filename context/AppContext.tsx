@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
-import { Log, UserPreference, Goal, ConsumptionType } from '../types';
+import { Log, UserPreference, Goal, ConsumptionType } from '../types/types';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from './AuthContext'; // Import the useAuth hook
