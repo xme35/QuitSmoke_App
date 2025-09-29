@@ -1,3 +1,4 @@
+import "../global.css";
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -5,6 +6,7 @@ import 'react-native-reanimated';
 import { initializeApp } from 'firebase/app';
 import { firebaseConfig } from '@/firebase/config';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { AppProvider } from '@/context/AppContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useEffect } from 'react';
 
@@ -48,10 +50,12 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <InitialLayout />
-        <StatusBar style="auto" />
-      </ThemeProvider>
+      <AppProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <InitialLayout />
+          <StatusBar style="auto" />
+        </ThemeProvider>
+      </AppProvider>
     </AuthProvider>
   );
 }

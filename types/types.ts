@@ -1,8 +1,8 @@
 export enum ConsumptionType {
-  VAPE = 'VAPE',
-  CIGARETTE = 'CIGARETTE',
-  HEATED_TOBACCO = 'HEATED_TOBACCO',
-  PATCH = 'PATCH',
+  VAPE = 'vape',
+  CIGARETTE = 'cigarette',
+  HEATED_TOBACCO = 'heated_tobacco',
+  PATCH = 'patch',
 }
 
 export interface Log {
@@ -13,18 +13,33 @@ export interface Log {
   timestamp: string;
 }
 
+export enum GoalType {
+  LIMIT_PER_DAY = 'limit_per_day',
+  QUIT_BY_DATE = 'quit_by_date',
+}
+
+export interface TaperingPhase {
+  phase: number;
+  durationDays: number;
+  nicotineGoalMg: number;
+}
+
 export interface Goal {
-  id: string;
-  description: string;
-  completed: boolean;
+  id:string;
+  type: GoalType;
+  targetValue?: number; // For LIMIT_PER_DAY (nicotine mg)
+  endDate?: string; // For QUIT_BY_DATE
+  startDate: string;
+  isActive: boolean;
+  taperingSchedule?: TaperingPhase[];
 }
 
 export interface UserPreference {
   defaultConsumptionType: ConsumptionType;
-  nicotineStrengthMgPerMl: number;
+  nicotineStrengthMgPerMl: number; // For vape
   nicotineStrengthMgPerCigarette: number;
   nicotineStrengthMgPerHeatedTobacco: number;
-  nicotineStrengthMgPerPatch: number;
+  nicotineStrengthMgPerPatch: number; // Nicotine in a single patch
   dailyNicotineGoalMg: number;
   costPerPack: number;
   cigarettesPerPack: number;
@@ -33,8 +48,8 @@ export interface UserPreference {
   costPerHeatedTobaccoPack: number;
   heatedTobaccoSticksPerPack: number;
   costPerPatch: number;
-  baselineDailyCigarettes: number;
-  baselineDailyPuffs: number;
+  baselineDailyCigarettes: number; // For money saved calculation
+  baselineDailyPuffs: number; // For money saved calculation
   baselineDailyHeatedTobacco: number;
   baselineDailyPatches: number;
 }
