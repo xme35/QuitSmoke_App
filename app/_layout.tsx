@@ -2,16 +2,10 @@ import "../global.css";
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
-import { initializeApp } from 'firebase/app';
-import { firebaseConfig } from '@/firebase/config';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { AppProvider } from '@/context/AppContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useEffect } from 'react';
-
-// Initialize Firebase
-initializeApp(firebaseConfig);
 
 export const unstable_settings = {
   // Ensure that reloading on a modal keeps a back button present.
@@ -19,21 +13,25 @@ export const unstable_settings = {
 };
 
 const InitialLayout = () => {
-  const { user, isLoading } = useAuth();
+  const { user, isAuthReady } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => {
-    if (isLoading) return;
+    if (!isAuthReady) return;
 
     const inAuthGroup = segments[0] === '(auth)';
 
     if (!user && !inAuthGroup) {
       router.replace('/(auth)/sign-in');
     } else if (user && inAuthGroup) {
-      router.replace('/(tabs)');
+      router.replace('/home');
     }
-  }, [user, isLoading, segments]);
+  }, [user, isAuthReady, segments]);
+
+  if (!isAuthReady) {
+    return null; // Or a loading spinner
+  }
 
   return (
     <Stack>

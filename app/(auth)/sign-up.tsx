@@ -1,98 +1,44 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { useState } from 'react';
+import { View, Text, TextInput, Button, Alert } from 'react-native';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '@/firebase/config'; // Importe a instância auth centralizada
 import { useRouter } from 'expo-router';
-import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 
-const SignUpScreen = () => {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
-    const router = useRouter();
-    const auth = getAuth();
+const SignUp = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const router = useRouter();
 
-    const handleSignUp = async () => {
-        try {
-            await createUserWithEmailAndPassword(auth, email, password);
-            router.replace('/(tabs)/home');
-        } catch (error: any) {
-            setError(error.message);
-        }
-    };
+  const handleSignUp = async () => {
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+      // A navegação será tratada pelo _layout
+    } catch (error: any) {
+      Alert.alert('Erro de Cadastro', error.message);
+    }
+  };
 
-    return (
-        <View style={styles.container}>
-            <Text style={styles.title}>Sign Up</Text>
-            <TextInput
-                style={styles.input}
-                placeholder="Email"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-            />
-            <TextInput
-                style={styles.input}
-                placeholder="Password"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-            />
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-            <TouchableOpacity style={styles.button} onPress={handleSignUp}>
-                <Text style={styles.buttonText}>Sign Up</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => router.push('/(auth)/sign-in')}>
-                <Text style={styles.link}>Already have an account? Sign In</Text>
-            </TouchableOpacity>
-        </View>
-    );
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', padding: 16 }}>
+      <Text style={{ fontSize: 24, marginBottom: 16, textAlign: 'center' }}>Criar Conta</Text>
+      <TextInput
+        placeholder="Email"
+        value={email}
+        onChangeText={setEmail}
+        style={{ borderWidth: 1, padding: 8, marginBottom: 8 }}
+        autoCapitalize="none"
+      />
+      <TextInput
+        placeholder="Senha"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+        style={{ borderWidth: 1, padding: 8, marginBottom: 16 }}
+      />
+      <Button title="Criar Conta" onPress={handleSignUp} />
+      <Button title="Já tenho uma conta" onPress={() => router.push('/(auth)/sign-in')} />
+    </View>
+  );
 };
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        justifyContent: 'center',
-        padding: 16,
-        backgroundColor: '#f8fafc',
-    },
-    title: {
-        fontSize: 32,
-        fontWeight: 'bold',
-        textAlign: 'center',
-        marginBottom: 24,
-        color: '#1e293b',
-    },
-    input: {
-        height: 50,
-        borderColor: '#cbd5e1',
-        borderWidth: 1,
-        borderRadius: 8,
-        paddingHorizontal: 16,
-        marginBottom: 16,
-        fontSize: 16,
-    },
-    button: {
-        backgroundColor: '#0ea5e9',
-        paddingVertical: 16,
-        borderRadius: 8,
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    buttonText: {
-        color: '#fff',
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    link: {
-        color: '#0ea5e9',
-        textAlign: 'center',
-        fontSize: 16,
-    },
-    error: {
-        color: 'red',
-        textAlign: 'center',
-        marginBottom: 16,
-    },
-});
-
-export default SignUpScreen;
+export default SignUp;
