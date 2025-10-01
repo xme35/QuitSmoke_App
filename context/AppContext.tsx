@@ -1,73 +1,56 @@
-import { createContext, useContext, useEffect, useState } from 'react';
-import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
-import { useAuth } from './AuthContext';
 
-interface AppContextProps {
-  logs: any[];
-  goals: any;
-  settings: any;
-  addLog: (log: any) => void;
-  updateGoals: (goals: any) => void;
-  updateSettings: (settings: any) => void;
+import React, { createContext, useContext, useState, ReactNode } from 'react';
+import { CountryCode } from 'react-native-country-picker-modal';
+
+interface AppState {
+  name: string | null;
+  age: number | null;
+  country: CountryCode | null;
+  sources: string[] | null;
+  cigarettes: { amount: number; type: string; } | null;
+  vapes: { puffs: number; strength: string; } | null;
+  heatedTobacco: { sticks: number; } | null;
+  nicotinePouches: { pouches: number; strength: string; } | null;
+  duration: string | null;
+  quittingPace: string | null;
+  motivation: string | null;
+  quitDate: string | null;
 }
 
-const AppContext = createContext<AppContextProps>({} as AppContextProps);
+interface AppContextType {
+  appState: AppState;
+  setAppState: React.Dispatch<React.SetStateAction<AppState>>;
+}
 
-export const AppProvider = ({ children }: { children: React.ReactNode }) => {
-  const { user } = useAuth();
-  const [logs, setLogs] = useState<any[]>([]);
-  const [goals, setGoals] = useState<any>({});
-  const [settings, setSettings] = useState<any>({});
-  const db = getFirestore();
+const AppContext = createContext<AppContextType | undefined>(undefined);
 
-  useEffect(() => {
-    if (user) {
-      const fetchData = async () => {
-        const docRef = doc(db, 'users', user.uid);
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setLogs(data.logs || []);
-          setGoals(data.goals || {});
-          setSettings(data.settings || {});
-        } else {
-          // If no data, initialize with empty values
-          await setDoc(docRef, { logs: [], goals: {}, settings: {} });
-        }
-      };
-
-      fetchData();
-    }
-  }, [user]);
-
-  const addLog = async (log: any) => {
-    if (user) {
-      const newLogs = [...logs, log];
-      setLogs(newLogs);
-      await setDoc(doc(db, 'users', user.uid), { logs: newLogs }, { merge: true });
-    }
-  };
-
-  const updateGoals = async (newGoals: any) => {
-    if (user) {
-      setGoals(newGoals);
-      await setDoc(doc(db, 'users', user.uid), { goals: newGoals }, { merge: true });
-    }
-  };
-
-  const updateSettings = async (newSettings: any) => {
-    if (user) {
-      setSettings(newSettings);
-      await setDoc(doc(db, 'users', user.uid), { settings: newSettings }, { merge: true });
-    }
-  };
+export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [appState, setAppState] = useState<AppState>({
+    name: null,
+    age: null,
+    country: null,
+    sources: null,
+    cigarettes: null,
+    vapes: null,
+    heatedTobacco: null,
+    nicotinePouches: null,
+    duration: null,
+    quittingPace: null,
+    motivation: null,
+    quitDate: null,
+  });
 
   return (
-    <AppContext.Provider value={{ logs, goals, settings, addLog, updateGoals, updateSettings }}>
+    <AppContext.Provider value={{ appState, setAppState }}>
       {children}
     </AppContext.Provider>
   );
 };
 
-export const useApp = () => useContext(AppContext);
+export const useAppContext = () => {
+  const context = useContext(AppContext);
+  if (context === undefined) {
+    throw new Error('useAppContext must be used within an AppProvider');
+  }
+  return context;
+};

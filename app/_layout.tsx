@@ -1,59 +1,73 @@
-import "../global.css";
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+
+import { useEffect, useState } from 'react';
+import { Asset } from 'expo-asset';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { AuthProvider, useAuth } from '@/context/AuthContext';
-import { AppProvider } from '@/context/AppContext';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useEffect } from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AppProvider } from '../context/AppContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SplashScreen from 'expo-splash-screen';
 
-export const unstable_settings = {
-  // Ensure that reloading on a modal keeps a back button present.
-  initialRouteName: '(tabs)',
-};
+// Prevent the splash screen from auto-hiding
+SplashScreen.preventAutoHideAsync();
 
-const InitialLayout = () => {
-  const { user, isAuthReady } = useAuth();
-  const segments = useSegments();
+// Preload images
+const images = [require('../assets/images/evolution.png')];
+
+export default function RootLayout() {
+  const [loading, setLoading] = useState(true);
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState<boolean | null>(null);
   const router = useRouter();
+  const segments = useSegments();
 
   useEffect(() => {
-    if (!isAuthReady) return;
+    const preloadAssets = async () => {
+      const cacheImages = images.map(image => Asset.fromModule(image).downloadAsync());
+      await Promise.all(cacheImages);
+    };
 
-    const inAuthGroup = segments[0] === '(auth)';
+    const checkOnboardingStatus = async () => {
+      try {
+        const onboardingStatus = await AsyncStorage.getItem('hasCompletedOnboarding');
+        setHasCompletedOnboarding(onboardingStatus === 'true');
+      } catch (error) {
+        console.error('Failed to get onboarding status', error);
+        setHasCompletedOnboarding(false);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    if (!user && !inAuthGroup) {
-      router.replace('/(auth)/sign-in');
-    } else if (user && inAuthGroup) {
-      router.replace('/home');
+    preloadAssets();
+    checkOnboardingStatus();
+  }, []);
+
+  useEffect(() => {
+    if (loading || hasCompletedOnboarding === null) return;
+
+    const inOnboardingGroup = segments[0] === '(onboarding)';
+
+    if (hasCompletedOnboarding && inOnboardingGroup) {
+      router.replace('/');
+    } else if (!hasCompletedOnboarding && !inOnboardingGroup) {
+      router.replace('/welcome');
     }
-  }, [user, isAuthReady, segments]);
 
-  if (!isAuthReady) {
-    return null; // Or a loading spinner
+    // Hide the splash screen now that we are ready
+    SplashScreen.hideAsync();
+  }, [loading, hasCompletedOnboarding, segments, router]);
+
+  if (loading || hasCompletedOnboarding === null) {
+    return null;
   }
 
   return (
-    <Stack>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      <Stack.Screen name="(auth)/sign-in" options={{ headerShown: false }} />
-      <Stack.Screen name="(auth)/sign-up" options={{ headerShown: false }} />
-    </Stack>
-  );
-};
-
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
-
-  return (
-    <AuthProvider>
+    <SafeAreaProvider>
       <AppProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <InitialLayout />
-          <StatusBar style="auto" />
-        </ThemeProvider>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(onboarding)" />
+          <Stack.Screen name="(main)" />
+        </Stack>
       </AppProvider>
-    </AuthProvider>
+    </SafeAreaProvider>
   );
 }
