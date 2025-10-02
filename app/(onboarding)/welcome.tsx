@@ -40,6 +40,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 24,
+    paddingTop: 80,
     justifyContent: 'space-between',
     backgroundColor: '#F9FAFB',
   },
@@ -68,7 +69,7 @@ const styles = StyleSheet.create({
   footer: {
     justifyContent: 'flex-end',
     alignItems: 'stretch',
-    marginBottom: 20,
+    marginBottom: 40,
   },
   nextButton: {
     backgroundColor: Colors.light.tint,

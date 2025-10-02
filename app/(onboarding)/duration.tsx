@@ -6,7 +6,6 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, TouchableOpacity, View, Platform } from 'react-native';
 import { useAppContext } from '../../context/AppContext';
-import { Ionicons } from '@expo/vector-icons';
 
 const OPTIONS = ['Less than 1 year', '1 to 5 years', '5 to 10 years', 'More than 10 years'];
 
@@ -112,7 +111,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
-    marginBottom: 20,
+    marginBottom: 40,
   },
   backButton: {
     paddingVertical: 16,

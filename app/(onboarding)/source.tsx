@@ -8,7 +8,7 @@ import { StyleSheet, TouchableOpacity, View, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useAppContext } from '../../context/AppContext';
 
-const OPTIONS = ['Cigarettes', 'Vapes', 'Heated Tobacco', 'Nicotine Pouches'];
+const OPTIONS = ['Cigarettes', 'Vapes', 'Heated Tobacco', 'Nicotine Pouch'];
 
 const SelectableCard = ({
   label,
@@ -136,6 +136,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
+    marginBottom: 40,
   },
   backButton: {
     paddingVertical: 16,

@@ -6,6 +6,7 @@ interface AppState {
   name: string | null;
   age: number | null;
   country: CountryCode | null;
+  countryName: string | null; // Added this line
   sources: string[] | null;
   cigarettes: { amount: number; type: string; } | null;
   vapes: { puffs: number; strength: string; } | null;
@@ -29,6 +30,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     name: null,
     age: null,
     country: null,
+    countryName: null, // Added this line
     sources: null,
     cigarettes: null,
     vapes: null,

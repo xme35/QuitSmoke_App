@@ -3,45 +3,178 @@ import { ThemedText } from '../../components/themed-text';
 import { ThemedView } from '../../components/themed-view';
 import { Colors } from '../../constants/theme';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { StyleSheet, TouchableOpacity, View, Platform, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, TouchableOpacity, View, ScrollView } from 'react-native';
 import { useAppContext } from '../../context/AppContext';
 import Slider from '@react-native-community/slider';
-import { Ionicons } from '@expo/vector-icons';
+import { NICOTINE_ESTIMATES } from '../../data/constants';
 
 const ProductDetailsScreen = () => {
-  const { appState } = useAppContext();
+  const { appState, setAppState } = useAppContext();
   const { sources } = appState;
 
-  const handleNext = () => {
-    // @ts-ignore
-    router.push('/(onboarding)/duration');
+  // Initialize states with 0 if not already set
+  useEffect(() => {
+    const initialAppState = { ...appState };
+    let needsUpdate = false;
+
+    if (sources?.includes('Cigarettes') && appState.cigarettes?.amount === undefined) {
+      initialAppState.cigarettes = { ...initialAppState.cigarettes, amount: 0, type: 'Regular' };
+      needsUpdate = true;
+    }
+    if (sources?.includes('Vapes') && appState.vapes?.puffs === undefined) {
+      initialAppState.vapes = { ...initialAppState.vapes, puffs: 0, strength: 'Medium' };
+      needsUpdate = true;
+    }
+    // Correctly check for 'Nicotine Pouches'
+    if (sources?.includes('Nicotine Pouches') && appState.nicotinePouches?.pouches === undefined) {
+      initialAppState.nicotinePouches = { ...initialAppState.nicotinePouches, pouches: 0, strength: 'Medium' };
+      needsUpdate = true;
+    }
+    if (sources?.includes('Heated Tobacco') && appState.heatedTobacco?.sticks === undefined) {
+      initialAppState.heatedTobacco = { ...initialAppState.heatedTobacco, sticks: 0 };
+      needsUpdate = true;
+    }
+
+    if (needsUpdate) {
+      setAppState(initialAppState);
+    }
+  }, [sources]);
+
+  const [estimatedIntake, setEstimatedIntake] = useState(0);
+
+  const handleCigarettesChange = (value: number) => {
+    setAppState(prev => ({ ...prev, cigarettes: { ...prev.cigarettes, type: prev.cigarettes?.type ?? 'Regular', amount: value } }));
+  };
+  const handleVapesChange = (value: number) => {
+    setAppState(prev => ({ ...prev, vapes: { ...prev.vapes, strength: prev.vapes?.strength ?? 'Medium', puffs: value } }));
+  };
+  const handlePouchesChange = (value: number) => {
+    setAppState(prev => ({ ...prev, nicotinePouches: { ...prev.nicotinePouches, strength: prev.nicotinePouches?.strength ?? 'Medium', pouches: value } }));
+  };
+  const handleHeatedTobaccoChange = (value: number) => {
+    setAppState(prev => ({ ...prev, heatedTobacco: { ...prev.heatedTobacco, sticks: value } }));
   };
 
-  const handleBack = () => {
-    router.back();
+  useEffect(() => {
+    let total = 0;
+    if (sources?.includes('Cigarettes')) {
+      total += (appState.cigarettes?.amount || 0) * NICOTINE_ESTIMATES.Cigarettes;
+    }
+    if (sources?.includes('Vapes')) {
+      total += (appState.vapes?.puffs || 0) * NICOTINE_ESTIMATES.Vapes;
+    }
+    if (sources?.includes('Nicotine Pouches')) {
+      total += (appState.nicotinePouches?.pouches || 0) * NICOTINE_ESTIMATES['Nicotine Pouches'];
+    }
+    if (sources?.includes('Heated Tobacco')) {
+      total += (appState.heatedTobacco?.sticks || 0) * NICOTINE_ESTIMATES['Heated Tobacco'];
+    }
+    setEstimatedIntake(total);
+  }, [appState, sources]);
+
+  const handleNext = () => {
+    router.push('/(onboarding)/duration');
   };
 
   return (
     <ThemedView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={Colors.light.tint} />
-        </TouchableOpacity>
-      </View>
-      <ScrollView style={styles.mainContent}>
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
         <ThemedText type="title" style={styles.title}>
-          Tell us more
+          How much do you use daily?
         </ThemedText>
-        <ThemedText style={styles.subtitle}>
-          This will help us calculate your nicotine intake.
-        </ThemedText>
-        {sources.includes('Cigarettes') && <CigarettesDetails />}
-        {sources.includes('Vapes') && <VapesDetails />}
-        {sources.includes('Heated Tobacco') && <HeatedTobaccoDetails />}
-        {sources.includes('Nicotine Pouches') && <NicotinePouchesDetails />}
+
+        {sources?.includes('Cigarettes') && (
+          <View style={styles.productContainer}>
+            <View style={styles.productHeader}>
+              <ThemedText style={styles.productLabel}>Cigarettes</ThemedText>
+              <ThemedText style={styles.productValue}>{(appState.cigarettes?.amount || 0)} units</ThemedText>
+            </View>
+            <Slider
+              style={styles.slider}
+              minimumValue={0}
+              maximumValue={70}
+              step={1}
+              value={appState.cigarettes?.amount || 0}
+              onValueChange={handleCigarettesChange}
+              minimumTrackTintColor={Colors.light.tint}
+              maximumTrackTintColor="#E5E7EB"
+              thumbTintColor={Colors.light.tint}
+            />
+          </View>
+        )}
+
+        {sources?.includes('Vapes') && (
+          <View style={styles.productContainer}>
+            <View style={styles.productHeader}>
+              <ThemedText style={styles.productLabel}>Vapes</ThemedText>
+              <ThemedText style={styles.productValue}>{(appState.vapes?.puffs || 0)} puffs</ThemedText>
+            </View>
+            <Slider
+              style={styles.slider}
+              minimumValue={0}
+              maximumValue={500}
+              step={10}
+              value={appState.vapes?.puffs || 0}
+              onValueChange={handleVapesChange}
+              minimumTrackTintColor={Colors.light.tint}
+              maximumTrackTintColor="#E5E7EB"
+              thumbTintColor={Colors.light.tint}
+            />
+          </View>
+        )}
+
+        {sources?.includes('Nicotine Pouches') && (
+          <View style={styles.productContainer}>
+            <View style={styles.productHeader}>
+              <ThemedText style={styles.productLabel}>Nicotine Pouches</ThemedText>
+              <ThemedText style={styles.productValue}>{(appState.nicotinePouches?.pouches || 0)} units</ThemedText>
+            </View>
+            <Slider
+              style={styles.slider}
+              minimumValue={0}
+              maximumValue={30}
+              step={1}
+              value={appState.nicotinePouches?.pouches || 0}
+              onValueChange={handlePouchesChange}
+              minimumTrackTintColor={Colors.light.tint}
+              maximumTrackTintColor="#E5E7EB"
+              thumbTintColor={Colors.light.tint}
+            />
+          </View>
+        )}
+
+        {sources?.includes('Heated Tobacco') && (
+          <View style={styles.productContainer}>
+            <View style={styles.productHeader}>
+              <ThemedText style={styles.productLabel}>Heated Tobacco</ThemedText>
+              <ThemedText style={styles.productValue}>{(appState.heatedTobacco?.sticks || 0)} units</ThemedText>
+            </View>
+            <Slider
+              style={styles.slider}
+              minimumValue={0}
+              maximumValue={40}
+              step={1}
+              value={appState.heatedTobacco?.sticks || 0}
+              onValueChange={handleHeatedTobaccoChange}
+              minimumTrackTintColor={Colors.light.tint}
+              maximumTrackTintColor="#E5E7EB"
+              thumbTintColor={Colors.light.tint}
+            />
+          </View>
+        )}
+        
+        <View style={styles.estimationContainer}>
+          <ThemedText style={styles.estimationLabel}>Estimated Daily Nicotine Intake</ThemedText>
+          <ThemedText style={styles.estimationValue}>{estimatedIntake.toFixed(1)} mg</ThemedText>
+        </View>
+
       </ScrollView>
+
       <View style={styles.footer}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <ThemedText style={styles.backButtonText}>Back</ThemedText>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
           <ThemedText style={styles.nextButtonText}>Next</ThemedText>
         </TouchableOpacity>
@@ -50,252 +183,87 @@ const ProductDetailsScreen = () => {
   );
 };
 
-const RadioButton = ({ label, selected, onSelect }: { label: string; selected: boolean; onSelect: () => void }) => (
-    <TouchableOpacity style={[styles.radioButton, selected && styles.radioButtonSelected]} onPress={onSelect}>
-      <ThemedText style={styles.radioButtonText}>{label}</ThemedText>
-    </TouchableOpacity>
-  );
-
-const CigarettesDetails = () => {
-    const { appState, setAppState } = useAppContext();
-    const [type, setType] = useState(appState.cigarettes?.type || 'Regular');
-    const [amount, setAmount] = useState(appState.cigarettes?.amount || 10);
-  
-    const handleTypeChange = (newType: string) => {
-      setType(newType);
-      setAppState((prevState) => ({ ...prevState, cigarettes: { ...prevState.cigarettes, type: newType, amount: prevState.cigarettes?.amount || 10 } }));
-    };
-  
-    const handleAmountChange = (newAmount: number) => {
-      setAmount(newAmount);
-      setAppState((prevState) => ({ ...prevState, cigarettes: { ...prevState.cigarettes, amount: newAmount, type: prevState.cigarettes?.type || 'Regular' } }));
-    };
-  
-    return (
-      <View style={styles.productContainer}>
-        <ThemedText style={styles.productTitle}>Tell us about your cigarettes</ThemedText>
-        <ThemedText style={styles.questionText}>What type?</ThemedText>
-        <View style={styles.radioGroup}>
-            <RadioButton label="Regular (10-12mg)" selected={type === 'Regular'} onSelect={() => handleTypeChange('Regular')} />
-            <RadioButton label="Light (6-8mg)" selected={type === 'Light'} onSelect={() => handleTypeChange('Light')} />
-            <RadioButton label="Strong (12-15mg)" selected={type === 'Strong'} onSelect={() => handleTypeChange('Strong')} />
-        </View>
-        <ThemedText style={styles.questionText}>How many per day? {amount}</ThemedText>
-        <Slider
-          style={styles.slider}
-          minimumValue={1}
-          maximumValue={70}
-          step={1}
-          value={amount}
-          onValueChange={handleAmountChange}
-          minimumTrackTintColor={Colors.light.tint}
-          maximumTrackTintColor="#d3d3d3"
-          thumbTintColor={Colors.light.tint}
-        />
-      </View>
-    );
-  };
-  
-  const VapesDetails = () => {
-    const { appState, setAppState } = useAppContext();
-    const [strength, setStrength] = useState(appState.vapes?.strength || 'Medium');
-    const [puffs, setPuffs] = useState(appState.vapes?.puffs || 100);
-
-    const handleStrengthChange = (newStrength: string) => {
-        setStrength(newStrength);
-        setAppState((prevState) => ({ ...prevState, vapes: { ...prevState.vapes, strength: newStrength, puffs: prevState.vapes?.puffs || 100 } }));
-    };
-
-    const handlePuffsChange = (newPuffs: number) => {
-        setPuffs(newPuffs);
-        setAppState((prevState) => ({ ...prevState, vapes: { ...prevState.vapes, puffs: newPuffs, strength: prevState.vapes?.strength || 'Medium' } }));
-    };
-
-    return (
-        <View style={styles.productContainer}>
-            <ThemedText style={styles.productTitle}>Tell us about your vaping</ThemedText>
-            <ThemedText style={styles.questionText}>Nicotine strength?</ThemedText>
-            <View style={styles.radioGroup}>
-                <RadioButton label="Low (0-3mg/ml)" selected={strength === 'Low'} onSelect={() => handleStrengthChange('Low')} />
-                <RadioButton label="Medium (6mg/ml)" selected={strength === 'Medium'} onSelect={() => handleStrengthChange('Medium')} />
-                <RadioButton label="High (12mg/ml)" selected={strength === 'High'} onSelect={() => handleStrengthChange('High')} />
-                <RadioButton label="Very High (18mg+/ml)" selected={strength === 'Very High'} onSelect={() => handleStrengthChange('Very High')} />
-            </View>
-            <ThemedText style={styles.questionText}>Approximate puffs per day? {puffs}</ThemedText>
-            <Slider
-                style={styles.slider}
-                minimumValue={10}
-                maximumValue={500}
-                step={10}
-                value={puffs}
-                onValueChange={handlePuffsChange}
-                minimumTrackTintColor={Colors.light.tint}
-                maximumTrackTintColor="#d3d3d3"
-                thumbTintColor={Colors.light.tint}
-            />
-        </View>
-    );
-  };
-  
-  const HeatedTobaccoDetails = () => {
-    const { appState, setAppState } = useAppContext();
-    const [sticks, setSticks] = useState(appState.heatedTobacco?.sticks || 10);
-
-    const handleSticksChange = (newSticks: number) => {
-        setSticks(newSticks);
-        setAppState((prevState) => ({ ...prevState, heatedTobacco: { sticks: newSticks } }));
-    };
-
-    return (
-        <View style={styles.productContainer}>
-            <ThemedText style={styles.productTitle}>Tell us about your heated tobacco use</ThemedText>
-            <ThemedText style={styles.questionText}>Sticks per day? {sticks}</ThemedText>
-            <Slider
-                style={styles.slider}
-                minimumValue={1}
-                maximumValue={40}
-                step={1}
-                value={sticks}
-                onValueChange={handleSticksChange}
-                minimumTrackTintColor={Colors.light.tint}
-                maximumTrackTintColor="#d3d3d3"
-                thumbTintColor={Colors.light.tint}
-            />
-        </View>
-    );
-  };
-  
-  const NicotinePouchesDetails = () => {
-    const { appState, setAppState } = useAppContext();
-    const [strength, setStrength] = useState(appState.nicotinePouches?.strength || 'Medium');
-    const [pouches, setPouches] = useState(appState.nicotinePouches?.pouches || 10);
-
-    const handleStrengthChange = (newStrength: string) => {
-        setStrength(newStrength);
-        setAppState((prevState) => ({ ...prevState, nicotinePouches: { ...prevState.nicotinePouches, strength: newStrength, pouches: prevState.nicotinePouches?.pouches || 10 } }));
-    };
-
-    const handlePouchesChange = (newPouches: number) => {
-        setPouches(newPouches);
-        setAppState((prevState) => ({ ...prevState, nicotinePouches: { ...prevState.nicotinePouches, pouches: newPouches, strength: prevState.nicotinePouches?.strength || 'Medium' } }));
-    };
-
-    return (
-        <View style={styles.productContainer}>
-            <ThemedText style={styles.productTitle}>Tell us about your nicotine pouch use</ThemedText>
-            <ThemedText style={styles.questionText}>Nicotine strength per pouch?</ThemedText>
-            <View style={styles.radioGroup}>
-                <RadioButton label="Low (2-4mg)" selected={strength === 'Low'} onSelect={() => handleStrengthChange('Low')} />
-                <RadioButton label="Medium (6-8mg)" selected={strength === 'Medium'} onSelect={() => handleStrengthChange('Medium')} />
-                <RadioButton label="High (10-12mg)" selected={strength === 'High'} onSelect={() => handleStrengthChange('High')} />
-                <RadioButton label="Extra High (15mg+)" selected={strength === 'Extra High'} onSelect={() => handleStrengthChange('Extra High')} />
-            </View>
-            <ThemedText style={styles.questionText}>Pouches per day? {pouches}</ThemedText>
-            <Slider
-                style={styles.slider}
-                minimumValue={1}
-                maximumValue={30}
-                step={1}
-                value={pouches}
-                onValueChange={handlePouchesChange}
-                minimumTrackTintColor={Colors.light.tint}
-                maximumTrackTintColor="#d3d3d3"
-                thumbTintColor={Colors.light.tint}
-            />
-        </View>
-    );
-  };
-
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        paddingHorizontal: 24,
-        paddingBottom: 24,
         backgroundColor: '#FFFFFF',
+        paddingHorizontal: 24,
     },
-    header: {
-      flexDirection: 'row',
-      justifyContent: 'flex-start',
-      alignItems: 'center',
-      paddingTop: 48,
-      paddingBottom: 10,
-    },
-    backButton: {
-        padding: 8,
-    },
-    mainContent: {
-        flex: 1,
+    scrollContainer: {
+        paddingBottom: 120, // To ensure estimation is not hidden by footer
     },
     title: {
         textAlign: 'center',
-        marginBottom: 12,
-        lineHeight: 44,
-        ...Platform.select({
-          android: {
-            includeFontPadding: false,
-          },
-        }),
-    },
-    subtitle: {
-        textAlign: 'center',
-        fontSize: 16,
-        color: '#6B7280',
-        marginBottom: 32,
+        marginTop: 60,
+        marginBottom: 50,
+        fontSize: 28,
     },
     productContainer: {
-        marginBottom: 24,
+        marginBottom: 32,
     },
-    productTitle: {
-        fontWeight: "500",
-        fontSize: 18, 
-        marginBottom: 16,
-    },
-    questionText: {
-        fontSize: 16,
+    productHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         marginBottom: 8,
+    },
+    productLabel: {
+        fontSize: 18,
         color: '#374151',
+    },
+    productValue: {
+        fontSize: 16,
+        color: Colors.light.tint,
+        fontWeight: '600',
     },
     slider: {
         width: '100%',
         height: 40,
-        marginVertical: 8,
+    },
+    estimationContainer: {
+        alignItems: 'center',
+        paddingVertical: 30,
+        marginTop: 20,
+        borderTopWidth: 1,
+        borderTopColor: '#F3F4F6',
+    },
+    estimationLabel: {
+        fontSize: 16,
+        color: '#6B7280',
+    },
+    estimationValue: {
+        fontSize: 36,
+        fontWeight: 'bold',
+        color: Colors.light.tint,
+        marginTop: 8,
     },
     footer: {
-        justifyContent: 'flex-end',
-        alignItems: 'stretch',
-        paddingTop: 16,
+        position: 'absolute',
+        bottom: 0,
+        left: 24,
+        right: 24,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 20,
+        backgroundColor: '#FFFFFF'
+    },
+    backButtonText: {
+        fontSize: 18,
+        color: '#6B7280',
+        fontWeight: '500',
     },
     nextButton: {
         backgroundColor: Colors.light.tint,
-        paddingVertical: 16,
-        borderRadius: 12,
-        alignItems: 'center',
+        paddingVertical: 18,
+        paddingHorizontal: 50,
+        borderRadius: 30,
     },
     nextButtonText: {
         color: '#FFFFFF',
         fontWeight: 'bold',
-        fontSize: 16,
+        fontSize: 18,
     },
-    radioGroup: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        marginBottom: 16,
-        gap: 8,
-    },
-    radioButton: {
-        paddingVertical: 10,
-        paddingHorizontal: 16,
-        borderWidth: 1,
-        borderColor: '#E5E7EB',
-        borderRadius: 20,
-    },
-    radioButtonSelected: {
-        backgroundColor: '#F0F9FF',
-        borderColor: Colors.light.tint,
-    },
-    radioButtonText: {
-        fontSize: 14,
-    }
 });
 
 export default ProductDetailsScreen;

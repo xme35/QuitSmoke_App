@@ -6,7 +6,6 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, TouchableOpacity, View, Platform } from 'react-native';
 import { useAppContext } from '../../context/AppContext';
-import { Ionicons } from '@expo/vector-icons';
 
 const OPTIONS = [
     { title: 'Slow', description: 'Gradual reduction over 3-6 months' },
@@ -46,11 +45,6 @@ export default function QuittingPaceScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={Colors.light.tint} />
-        </TouchableOpacity>
-      </View>
       <View style={styles.mainContent}>
         <ThemedText type="title" style={styles.title}>What quitting pace suits you?</ThemedText>
         <ThemedText style={styles.subtitle}>We'll create a personalized plan based on your choice.</ThemedText>
@@ -67,6 +61,9 @@ export default function QuittingPaceScreen() {
         </View>
       </View>
       <View style={styles.footer}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+          <ThemedText>Back</ThemedText>
+        </TouchableOpacity>
         <TouchableOpacity 
           style={[styles.nextButton, !pace && styles.nextButtonDisabled]} 
           onPress={handleNext} 
@@ -85,16 +82,6 @@ const styles = StyleSheet.create({
     padding: 24,
     justifyContent: 'space-between',
     backgroundColor: '#FFFFFF',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    alignItems: 'center',
-    paddingTop: 24,
-    paddingBottom: 10,
-  },
-  backButton: {
-    padding: 8,
   },
   mainContent: {
     flex: 1,
@@ -143,12 +130,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   footer: {
-    justifyContent: 'flex-end',
-    alignItems: 'stretch',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 40,
+  },
+  backButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
   },
   nextButton: {
     backgroundColor: Colors.light.tint,
     paddingVertical: 16,
+    paddingHorizontal: 24,
     borderRadius: 12,
     alignItems: 'center',
   },

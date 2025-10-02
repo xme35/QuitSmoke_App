@@ -18,6 +18,10 @@ export default function SummaryScreen() {
     }
   };
 
+  const handleBack = () => {
+    router.back();
+  };
+
   return (
     <ThemedView style={styles.container}>
       <View style={styles.mainContent}>
@@ -29,9 +33,14 @@ export default function SummaryScreen() {
         </ThemedText>
       </View>
 
-      <TouchableOpacity style={styles.startButton} onPress={handleStart}>
-        <ThemedText style={styles.startButtonText}>Começar Jornada</ThemedText>
-      </TouchableOpacity>
+      <View style={styles.footer}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+          <ThemedText>Back</ThemedText>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.nextButton} onPress={handleStart}>
+          <ThemedText style={styles.nextButtonText}>Começar Jornada</ThemedText>
+        </TouchableOpacity>
+      </View>
     </ThemedView>
   );
 }
@@ -41,11 +50,13 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 24,
     justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
   },
   mainContent: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 48,
+    paddingBottom: 50,
   },
   title: {
     textAlign: 'center',
@@ -56,13 +67,26 @@ const styles = StyleSheet.create({
     fontSize: 18,
     paddingHorizontal: 24,
   },
-  startButton: {
-    backgroundColor: Colors.light.tint,
-    paddingVertical: 18,
-    paddingHorizontal: 48,
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 40,
+  },
+  backButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     borderRadius: 12,
   },
-  startButtonText: {
+  nextButton: {
+    backgroundColor: Colors.light.tint,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  nextButtonText: {
     color: '#FFFFFF',
     fontWeight: 'bold',
     fontSize: 16,

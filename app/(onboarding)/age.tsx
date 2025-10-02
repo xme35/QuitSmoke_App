@@ -1,20 +1,36 @@
-
 import { ThemedText } from '../../components/themed-text';
 import { ThemedView } from '../../components/themed-view';
 import { Colors } from '../../constants/theme';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { StyleSheet, TouchableOpacity, View, Platform } from 'react-native';
+import { useState, useRef } from 'react';
+import { StyleSheet, TouchableOpacity, View, Platform, Animated } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { useAppContext } from '../../context/AppContext';
 
 export default function AgeScreen() {
   const { appState, setAppState } = useAppContext();
   const [age, setAge] = useState(appState.age || 25);
+  const scaleValue = useRef(new Animated.Value(1)).current;
 
   const handleAgeChange = (newAge: number) => {
     setAge(newAge);
     setAppState((prevState) => ({ ...prevState, age: newAge }));
+  };
+
+  const onSlideStart = () => {
+    Animated.timing(scaleValue, {
+      toValue: 1.2,
+      duration: 150,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const onSlideComplete = () => {
+    Animated.timing(scaleValue, {
+      toValue: 1,
+      duration: 150,
+      useNativeDriver: true,
+    }).start();
   };
 
   const handleNext = () => {
@@ -25,21 +41,29 @@ export default function AgeScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={styles.mainContent}>
-        <ThemedText type="title" style={styles.title}>What's your age?</ThemedText>
-        <View style={styles.ageDisplayContainer}>
-            <ThemedText style={[styles.ageText, { color: Colors.light.tint }]}>{age}</ThemedText>
+        <View style={styles.sliderWrapper}>
+          <ThemedText type="title" style={styles.title}>What is your age?</ThemedText>
+          <Animated.View style={[styles.ageDisplayContainer, { transform: [{ scale: scaleValue }] }]}>
+            <ThemedText style={[styles.ageText, { color: Colors.light.tint }]}>
+              {age}
+            </ThemedText>
+          </Animated.View>
+          <View style={styles.sliderTrack}>
+            <Slider
+              style={styles.slider}
+              minimumValue={18}
+              maximumValue={100}
+              step={1}
+              value={age}
+              onValueChange={handleAgeChange}
+              onSlidingStart={onSlideStart}
+              onSlidingComplete={onSlideComplete}
+              minimumTrackTintColor={Colors.light.tint}
+              maximumTrackTintColor="transparent"
+              thumbTintColor="#FFFFFF"
+            />
+          </View>
         </View>
-        <Slider
-          style={styles.slider}
-          minimumValue={18}
-          maximumValue={100}
-          step={1}
-          value={age}
-          onValueChange={handleAgeChange}
-          minimumTrackTintColor={Colors.light.tint}
-          maximumTrackTintColor="#d3d3d3"
-          thumbTintColor={Colors.light.tint}
-        />
       </View>
 
       <View style={styles.footer}>
@@ -67,25 +91,40 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingBottom: 50,
   },
+  sliderWrapper: {
+    width: '100%',
+    alignItems: 'center',
+  },
   title: {
     textAlign: 'center',
-    marginBottom: 48,
+    marginBottom: 48, // aumentado de 32
   },
   ageDisplayContainer: {
     minWidth: 120,
+    minHeight: 80, // adicione altura mínima
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 48,
+    marginBottom: 48, // aumentado de 32
+    paddingVertical: 10, // adicione padding vertical
+    backgroundColor: 'transparent',
   },
   ageText: {
-    fontSize: 60,
+    fontSize: 64, // aumentado de 50
     fontWeight: 'bold',
-    lineHeight: 70, // Give the text more vertical space
+    lineHeight: 72, // adicione lineHeight explícito
     ...Platform.select({
       android: {
-        includeFontPadding: false, // Remove extra padding on Android
+        includeFontPadding: false,
       },
     }),
+  },
+  sliderTrack: {
+    width: '80%',
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#E5E7EB',
+    justifyContent: 'center',
+    marginTop: 8, // espaço extra acima do slider
   },
   slider: {
     width: '100%',
@@ -96,7 +135,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
-    marginBottom: 20,
+    marginBottom: 40,
   },
   backButton: {
     paddingVertical: 16,
@@ -108,9 +147,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 24,
     borderRadius: 12,
-  },
-  nextButtonDisabled: {
-    backgroundColor: '#D1D5DB',
   },
   nextButtonText: {
     color: '#FFFFFF',
