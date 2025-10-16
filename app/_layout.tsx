@@ -1,72 +1,63 @@
 
-import { useEffect, useState } from 'react';
-import { Asset } from 'expo-asset';
+import { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { AppProvider } from '../context/AppContext';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppProvider, useAppContext } from '../context/AppContext';
 import * as SplashScreen from 'expo-splash-screen';
 
-// Prevent the splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();
 
-// Preload images
-const images = [require('../assets/images/evolution.png')];
-
-export default function RootLayout() {
-  const [loading, setLoading] = useState(true);
-  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState<boolean | null>(null);
+const RootNavigator = () => {
+  const { user, isLoading, appState } = useAppContext();
   const router = useRouter();
   const segments = useSegments();
 
   useEffect(() => {
-    const preloadAssets = async () => {
-      const cacheImages = images.map(image => Asset.fromModule(image).downloadAsync());
-      await Promise.all(cacheImages);
-    };
-
-    const checkOnboardingStatus = async () => {
-      try {
-        const onboardingStatus = await AsyncStorage.getItem('hasCompletedOnboarding');
-        setHasCompletedOnboarding(onboardingStatus === 'true');
-      } catch (error) {
-        console.error('Failed to get onboarding status', error);
-        setHasCompletedOnboarding(false);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    preloadAssets();
-    checkOnboardingStatus();
-  }, []);
-
-  useEffect(() => {
-    if (loading || hasCompletedOnboarding === null) return;
-
-    const inOnboardingGroup = segments[0] === '(onboarding)';
-
-    if (hasCompletedOnboarding && inOnboardingGroup) {
-      router.replace('/');
-    } else if (!hasCompletedOnboarding && !inOnboardingGroup) {
-      router.replace('/welcome');
+    if (isLoading) {
+      return;
     }
 
-    // Hide the splash screen now that we are ready
-    SplashScreen.hideAsync();
-  }, [loading, hasCompletedOnboarding, segments, router]);
+    try {
+      const inAuthGroup = segments[0] === '(auth)';
+      const inOnboardingGroup = segments[0] === '(onboarding)';
+      const inAppGroup = segments[0] === '(tabs)';
 
-  if (loading || hasCompletedOnboarding === null) {
-    return null;
-  }
+      // This is the crucial change:
+      // Redirect to onboarding only if the user is logged in, hasn't started the plan,
+      // AND is not already in the onboarding flow.
+      if (user && (!appState || !appState.planStartDate) && !inOnboardingGroup) {
+        router.replace('/(onboarding)/welcome');
+      } else if (user && appState?.planStartDate && !inAppGroup) {
+        router.replace('/(tabs)/dashboard');
+      } else if (!user && !inAuthGroup) {
+        router.replace('/(auth)/sign-in');
+      }
 
+      SplashScreen.hideAsync();
+
+    } catch (error) {
+      console.error('!!! CRITICAL NAVIGATION ERROR:', error);
+    }
+
+  }, [user, appState, isLoading, segments, router]);
+
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(auth)" />
+      <Stack.Screen name="(onboarding)" />
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="privacy" />
+      <Stack.Screen name="terms" />
+    </Stack>
+  );
+};
+
+export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AppProvider>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(onboarding)" />
-          <Stack.Screen name="(main)" />
-        </Stack>
+        <RootNavigator />
       </AppProvider>
     </SafeAreaProvider>
   );

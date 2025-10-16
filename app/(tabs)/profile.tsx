@@ -1,102 +1,262 @@
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { useApp } from '@/context/AppContext';
-import { getAuth, signOut } from 'firebase/auth';
+
+import React, { useState, useMemo } from 'react';
+import { StyleSheet, View, ScrollView, TouchableOpacity, Modal, TextInput, Switch, Alert, useColorScheme } from 'react-native';
+import { ThemedText } from '../../components/themed-text';
+import { ThemedView } from '../../components/themed-view';
+import { useAppContext, TaperingPhase, initialAppState } from '../../context/AppContext';
 import { useRouter } from 'expo-router';
-import { FC, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput } from 'react-native';
+import { FontAwesome5 } from '@expo/vector-icons';
+import { Colors } from '../../constants/theme';
 
-const Page: FC = () => {
-    const { settings, updateSettings } = useApp();
-    const [cravingInterval, setCravingInterval] = useState(settings.cravingIntervalMinutes?.toString() || '20');
-    const [cigarettesNotSmoked, setCigarettesNotSmoked] = useState(settings.cigarettesNotSmoked?.toString() || '20');
-    const router = useRouter();
-    const auth = getAuth();
+const getDailyLimitForDate = (date: Date, planStartDate?: string | null, taperingSchedule?: TaperingPhase[] | null): number => {
+    if (!planStartDate || !taperingSchedule || taperingSchedule.length === 0) return 0;
+    const startDate = new Date(planStartDate);
+    const daysIntoPlan = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 3600 * 24));
+    if (daysIntoPlan < 0) return taperingSchedule[0]?.nicotineGoalMg || 0;
+    let cumulativeDays = 0;
+    for (const phase of taperingSchedule) {
+        cumulativeDays += phase.durationDays;
+        if (daysIntoPlan < cumulativeDays) return phase.nicotineGoalMg;
+    }
+    return taperingSchedule[taperingSchedule.length - 1]?.nicotineGoalMg || 0;
+};
 
-    const handleSave = () => {
-        updateSettings({
-            cravingIntervalMinutes: parseInt(cravingInterval, 10),
-            cigarettesNotSmoked: parseInt(cigarettesNotSmoked, 10),
-        });
-    };
+interface ConfirmationModalProps {
+  visible: boolean;
+  onclose: () => void;
+  onconfirm: () => void;
+  title: string;
+  challengeText: string;
+  confirmation: string;
+  setconfirmation: (text: string) => void;
+  buttonlabel: string;
+}
 
-    const handleSignOut = () => {
-        signOut(auth).then(() => {
-            router.replace('/(auth)/sign-in');
-        });
-    };
+const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ visible, onclose, onconfirm, title, challengeText, confirmation, setconfirmation, buttonlabel }) => {
+    const colorScheme = useColorScheme() ?? 'light';
+    const themeColors = Colors[colorScheme];
 
     return (
-        <ThemedView style={styles.container}>
-            <Text style={styles.title}>Profile</Text>
-            <ThemedView style={styles.inputContainer}>
-                <ThemedText style={styles.label}>Craving Interval (minutes)</ThemedText>
-                <TextInput
-                    style={styles.input}
-                    value={cravingInterval}
-                    onChangeText={setCravingInterval}
-                    keyboardType="numeric"
-                />
-            </ThemedView>
-            <ThemedView style={styles.inputContainer}>
-                <ThemedText style={styles.label}>Cigarettes Not Smoked (daily)</ThemedText>
-                <TextInput
-                    style={styles.input}
-                    value={cigarettesNotSmoked}
-                    onChangeText={setCigarettesNotSmoked}
-                    keyboardType="numeric"
-                />
-            </ThemedView>
-            <Pressable style={styles.button} onPress={handleSave}>
-                <Text style={styles.buttonText}>Save</Text>
-            </Pressable>
-            <Pressable style={[styles.button, styles.signOutButton]} onPress={handleSignOut}>
-                <Text style={styles.buttonText}>Sign Out</Text>
-            </Pressable>
-        </ThemedView>
+        <Modal
+            animationType="slide"
+            transparent={true}
+            visible={visible}
+            onRequestClose={onclose}
+        >
+            <View style={styles.modalContainer}>
+                <ThemedView style={styles.modalView}>
+                    <ThemedText style={styles.modalTitle}>{title}</ThemedText>
+                    <ThemedText style={styles.modalText}>
+                        This action is irreversible. To confirm, please type '{challengeText}' in the box below.
+                    </ThemedText>
+                    <TextInput
+                        style={[styles.input, { borderColor: themeColors.secondaryText, color: themeColors.text }]}
+                        placeholder={challengeText}
+                        placeholderTextColor={themeColors.secondaryText}
+                        value={confirmation}
+                        onChangeText={setconfirmation}
+                        autoCapitalize="none"
+                    />
+                    <TouchableOpacity
+                        style={[styles.button, confirmation.toLowerCase() !== challengeText ? { backgroundColor: themeColors.secondaryText } : { backgroundColor: themeColors.error }]}
+                        onPress={onconfirm}
+                        disabled={confirmation.toLowerCase() !== challengeText}
+                    >
+                        <ThemedText style={styles.buttonText}>{buttonlabel}</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.button, { backgroundColor: themeColors.icon }]}
+                        onPress={onclose}
+                    >
+                        <ThemedText style={styles.buttonText}>Cancel</ThemedText>
+                    </TouchableOpacity>
+                </ThemedView>
+            </View>
+        </Modal>
     );
 };
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        padding: 24,
-    },
-    title: {
-        fontSize: 32,
-        fontWeight: 'bold',
-        marginBottom: 24,
-    },
-    inputContainer: {
-        marginBottom: 16,
-    },
-    label: {
-        fontSize: 16,
-        marginBottom: 8,
-    },
-    input: {
-        height: 50,
-        borderColor: '#cbd5e1',
-        borderWidth: 1,
-        borderRadius: 8,
-        paddingHorizontal: 16,
-        fontSize: 16,
-    },
-    button: {
-        backgroundColor: '#0ea5e9',
-        paddingVertical: 16,
-        borderRadius: 8,
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    buttonText: {
-        color: '#fff',
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    signOutButton: {
-        backgroundColor: '#e53e3e',
-    },
-});
 
-export default Page;
+export default function ProfileScreen() {
+    const { appState, setAppState } = useAppContext();
+    const router = useRouter();
+    const colorScheme = useColorScheme() ?? 'light';
+    const themeColors = Colors[colorScheme];
+    const { planStartDate, totalDuration, taperingSchedule, initialIntake } = appState;
+
+    const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+    const [newPlanModalVisible, setNewPlanModalVisible] = useState(false);
+    const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+    const [newPlanConfirmation, setNewPlanConfirmation] = useState('');
+    const [deleteConfirmation, setDeleteConfirmation] = useState('');
+
+    const planDetails = useMemo(() => {
+        const quitDate = new Date(planStartDate || Date.now());
+        if (planStartDate && totalDuration) {
+            quitDate.setDate(quitDate.getDate() + totalDuration);
+        }
+        return {
+            initialIntake: initialIntake || 0,
+            currentLimit: getDailyLimitForDate(new Date(), planStartDate, taperingSchedule),
+            targetQuitDate: planStartDate ? quitDate.toLocaleDateString() : 'N/A',
+        };
+    }, [planStartDate, totalDuration, taperingSchedule, initialIntake]);
+
+    const handleLogout = async () => {
+        try {
+            setAppState(initialAppState);
+            router.replace('/(auth)/sign-in' as any);
+            Alert.alert('Logged Out', 'You have been successfully logged out.');
+        } catch (error) {
+            console.error("Error signing out: ", error);
+            Alert.alert('Error', 'Could not log out. Please try again.');
+        }
+    };
+
+    const handleResetPlan = () => {
+        if (newPlanConfirmation.toLowerCase() === 'new plan') {
+            setAppState(prevState => ({
+                ...initialAppState,
+                name: prevState.name,
+            }));
+            setNewPlanModalVisible(false);
+            setNewPlanConfirmation('');
+            router.replace('/(onboarding)/welcome' as any);
+        } else {
+            Alert.alert('Incorrect Confirmation', 'Please type "new plan" to confirm.');
+        }
+    };
+
+    const handleDeleteAccount = async () => {
+        if (deleteConfirmation.toLowerCase() === 'delete') {
+            try {
+                setDeleteModalVisible(false);
+                setDeleteConfirmation('');
+                setAppState(initialAppState);
+                router.replace('/(auth)/sign-in' as any);
+                Alert.alert('Account Deleted', 'Your account has been permanently deleted.');
+            } catch (error) {
+                console.error("Error deleting account: ", error);
+                Alert.alert('Error', 'Could not delete your account. Please try again.');
+            }
+        } else {
+            Alert.alert('Incorrect Confirmation', 'Please type "delete" to confirm.');
+        }
+    };
+
+    return (
+        <ScrollView style={{ flex: 1, backgroundColor: themeColors.background }}>
+            <ConfirmationModal
+                visible={newPlanModalVisible}
+                onclose={() => setNewPlanModalVisible(false)}
+                onconfirm={handleResetPlan}
+                title="Start a New Plan?"
+                challengeText="new plan"
+                confirmation={newPlanConfirmation}
+                setconfirmation={setNewPlanConfirmation}
+                buttonlabel="Confirm and Start Over"
+            />
+            <ConfirmationModal
+                visible={deleteModalVisible}
+                onclose={() => setDeleteModalVisible(false)}
+                onconfirm={handleDeleteAccount}
+                title="Delete Account?"
+                challengeText="delete"
+                confirmation={deleteConfirmation}
+                setconfirmation={setDeleteConfirmation}
+                buttonlabel="Confirm and Delete"
+            />
+
+            <ThemedView style={styles.section}>
+                <ThemedText style={styles.sectionTitle}>My Plan</ThemedText>
+                <View style={styles.infoRow}>
+                    <ThemedText style={styles.infoLabel}>Initial Daily Intake</ThemedText>
+                    <ThemedText style={styles.infoValue}>{planDetails.initialIntake.toFixed(1)} mg</ThemedText>
+                </View>
+                <View style={styles.infoRow}>
+                    <ThemedText style={styles.infoLabel}>Current Daily Limit</ThemedText>
+                    <ThemedText style={styles.infoValue}>{planDetails.currentLimit.toFixed(1)} mg</ThemedText>
+                </View>
+                <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
+                    <ThemedText style={styles.infoLabel}>Target Quit Date</ThemedText>
+                    <ThemedText style={styles.infoValue}>{planDetails.targetQuitDate}</ThemedText>
+                </View>
+            </ThemedView>
+
+            <ThemedView style={styles.section}>
+                <ThemedText style={styles.sectionTitle}>Actions</ThemedText>
+                <TouchableOpacity style={styles.actionButton} onPress={() => setNewPlanModalVisible(true)}>
+                    <FontAwesome5 name="redo" size={16} color={themeColors.tint} />
+                    <ThemedText style={[styles.actionButtonText, { color: themeColors.tint }]}>Start a New Plan</ThemedText>
+                </TouchableOpacity>
+            </ThemedView>
+
+            <ThemedView style={styles.section}>
+                <ThemedText style={styles.sectionTitle}>Settings</ThemedText>
+                <View style={styles.settingRow}>
+                    <FontAwesome5 name="bell" size={16} color={themeColors.icon} />
+                    <ThemedText style={styles.settingLabel}>Enable Notifications</ThemedText>
+                    <Switch
+                        trackColor={{ false: "#767577", true: themeColors.tint }}
+                        thumbColor={notificationsEnabled ? themeColors.tint : "#f4f3f4"}
+                        onValueChange={() => setNotificationsEnabled(previousState => !previousState)}
+                        value={notificationsEnabled}
+                    />
+                </View>
+            </ThemedView>
+            
+            <ThemedView style={styles.section}>
+                <ThemedText style={styles.sectionTitle}>Account</ThemedText>
+                <TouchableOpacity style={styles.actionButton} onPress={handleLogout}>
+                    <FontAwesome5 name="sign-out-alt" size={16} color={themeColors.error} />
+                    <ThemedText style={[styles.actionButtonText, { color: themeColors.error }]}>Logout</ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.actionButton, {marginTop: 10}]} onPress={() => setDeleteModalVisible(true)}>
+                    <FontAwesome5 name="trash" size={16} color={themeColors.error} />
+                    <ThemedText style={[styles.actionButtonText, { color: themeColors.error }]}>Delete Account</ThemedText>
+                </TouchableOpacity>
+            </ThemedView>
+
+            <ThemedView style={styles.section}>
+                <ThemedText style={styles.sectionTitle}>Legal</ThemedText>
+                <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/privacy')}>
+                    <FontAwesome5 name="shield-alt" size={16} color={themeColors.icon} />
+                    <ThemedText style={[styles.actionButtonText, {color: themeColors.icon}]}>Privacy Policy</ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.actionButton, {marginTop: 10}]} onPress={() => router.push('/terms')}>
+                    <FontAwesome5 name="file-contract" size={16} color={themeColors.icon} />
+                    <ThemedText style={[styles.actionButtonText, {color: themeColors.icon}]}>Terms of Service</ThemedText>
+                </TouchableOpacity>
+            </ThemedView>
+        </ScrollView>
+    );
+}
+
+const styles = StyleSheet.create({
+    section: { 
+        marginHorizontal: 15, 
+        marginVertical: 10, 
+        borderRadius: 12, 
+        padding: 20,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    sectionTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 15 },
+    infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#eee' },
+    infoLabel: { fontSize: 16, opacity: 0.8 },
+    infoValue: { fontSize: 16, fontWeight: 'bold' },
+    actionButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 5, borderRadius: 8 },
+    actionButtonText: { fontSize: 16, marginLeft: 10 },
+    settingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
+    settingLabel: { fontSize: 16, flex: 1, marginLeft: 10 },
+    modalContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
+    modalView: { margin: 20, borderRadius: 20, padding: 35, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 5, width: '90%' },
+    modalTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 15 },
+    modalText: { marginBottom: 15, textAlign: 'center' },
+    input: { height: 50, width: '100%', borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 20, textAlign: 'center' },
+    button: { borderRadius: 10, padding: 15, elevation: 2, width: '100%', alignItems: 'center', marginBottom: 10 },
+    buttonText: { color: 'white', fontWeight: 'bold', textAlign: 'center', fontSize: 16 },
+});

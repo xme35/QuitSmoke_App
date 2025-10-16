@@ -15,7 +15,11 @@ export function ThemedText({ ...props }: ThemedTextProps) {
   return (
     <Text
       style={[
-        { color },
+        {
+          color,
+          includeFontPadding: false,
+          textAlignVertical: 'center',
+        },
         type === 'default' ? styles.default : undefined,
         type === 'title' ? styles.title : undefined,
         type === 'defaultSemiBold' ? styles.defaultSemiBold : undefined,
@@ -31,11 +35,9 @@ export function ThemedText({ ...props }: ThemedTextProps) {
 const styles = StyleSheet.create({
   default: {
     fontSize: 16,
-    lineHeight: 24,
   },
   defaultSemiBold: {
     fontSize: 16,
-    lineHeight: 24,
     fontWeight: '600',
   },
   title: {
@@ -47,7 +49,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   link: {
-    lineHeight: 30,
     fontSize: 16,
     color: '#0a7ea4',
   },

@@ -3,23 +3,40 @@ import { ThemedText } from '../../components/themed-text';
 import { ThemedView } from '../../components/themed-view';
 import { Colors } from '../../constants/theme';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { StyleSheet, TouchableOpacity, View, TextInput, Platform, KeyboardAvoidingView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useAppContext } from '../../context/AppContext';
+
+const MOTIVATION_OPTIONS = [
+  'Health Issues',
+  'Money',
+  'Family',
+  'Pregnancy',
+  'Other',
+];
 
 export default function MotivationScreen() {
   const { appState, setAppState } = useAppContext();
-  const [motivation, setMotivation] = useState(appState.motivation || '');
+  const [selectedMotivations, setSelectedMotivations] = useState<string[]>(appState.motivation || []);
 
-  const handleMotivationChange = (text: string) => {
-    setMotivation(text);
-    setAppState((prevState) => ({ ...prevState, motivation: text }));
+  useEffect(() => {
+    setAppState((prevState) => ({ ...prevState, motivation: selectedMotivations }));
+  }, [selectedMotivations, setAppState]);
+
+  const handleSelectMotivation = (motivation: string) => {
+    setSelectedMotivations((prevSelected) => {
+      if (prevSelected.includes(motivation)) {
+        return prevSelected.filter((item) => item !== motivation);
+      } else {
+        return [...prevSelected, motivation];
+      }
+    });
   };
 
   const handleNext = () => {
-    if (motivation.trim()) {
+    if (selectedMotivations.length > 0) {
       // @ts-ignore
-      router.push('/(onboarding)/quit-date');
+      router.push('/(onboarding)/summary');
     }
   };
 
@@ -27,37 +44,49 @@ export default function MotivationScreen() {
     router.back();
   };
 
+  const isNextButtonDisabled = selectedMotivations.length === 0;
+
   return (
     <ThemedView style={styles.container}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"} 
-        style={{flex: 1, justifyContent: 'space-between'}}
-      >
-        <View style={styles.mainContent}>
-          <ThemedText type="title" style={styles.title}>What is your main motivation for quitting?</ThemedText>
-          <ThemedText style={styles.subtitle}>Use this space to write a short, powerful reminder. You’ll see it every time you open the app.</ThemedText>
-          <TextInput
-            style={styles.input}
-            multiline
-            placeholder="E.g., 'To be healthier for my family and save money.'"
-            value={motivation}
-            onChangeText={handleMotivationChange}
-            placeholderTextColor="#9CA3AF"
-          />
+      <View style={styles.mainContent}>
+        <ThemedText type="title" style={styles.title}>
+          What's your main reason for quitting?
+        </ThemedText>
+        <ThemedText style={styles.subtitle}>Select all that apply.</ThemedText>
+
+        <View style={styles.optionsContainer}>
+          {MOTIVATION_OPTIONS.map((option) => (
+            <TouchableOpacity
+              key={option}
+              style={[
+                styles.card,
+                selectedMotivations.includes(option) && styles.cardSelected,
+              ]}
+              onPress={() => handleSelectMotivation(option)}
+            >
+              <ThemedText style={styles.cardTitle}>
+                {option}
+              </ThemedText>
+            </TouchableOpacity>
+          ))}
         </View>
-        <View style={styles.footer}>
-          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <ThemedText>Back</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.nextButton, !motivation.trim() && styles.nextButtonDisabled]} 
-            onPress={handleNext} 
-            disabled={!motivation.trim()}
-          >
-            <ThemedText style={styles.nextButtonText}>Next</ThemedText>
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+      </View>
+
+      <View style={styles.footer}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+          <ThemedText>Back</ThemedText>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.nextButton,
+            isNextButtonDisabled && styles.nextButtonDisabled,
+          ]}
+          onPress={handleNext}
+          disabled={isNextButtonDisabled}
+        >
+          <ThemedText style={styles.nextButtonText}>Next</ThemedText>
+        </TouchableOpacity>
+      </View>
     </ThemedView>
   );
 }
@@ -71,34 +100,37 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     flex: 1,
-    justifyContent: 'center',
-    paddingBottom: 20, // Adjust as needed
+    paddingTop: 80,
   },
   title: {
     textAlign: 'center',
-    marginBottom: 16,
-    lineHeight: 44,
-    ...Platform.select({
-      android: {
-        includeFontPadding: false,
-      },
-    }),
+    marginBottom: 12,
+    fontSize: 28,
   },
   subtitle: {
     textAlign: 'center',
     fontSize: 16,
-    marginBottom: 32,
+    marginBottom: 40,
     color: '#6B7280',
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    minHeight: 140,
-    textAlignVertical: 'top',
-    backgroundColor: '#F9FAFB',
+  optionsContainer: {
+    gap: 12,
+  },
+  card: {
+    padding: 20,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+  },
+  cardSelected: {
+    borderColor: Colors.light.tint,
+    backgroundColor: '#F0F9FF',
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
     color: '#1F2937',
   },
   footer: {
@@ -118,7 +150,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 24,
     borderRadius: 12,
-    alignItems: 'center',
   },
   nextButtonDisabled: {
     backgroundColor: '#D1D5DB',
@@ -126,6 +157,5 @@ const styles = StyleSheet.create({
   nextButtonText: {
     color: '#FFFFFF',
     fontWeight: 'bold',
-    fontSize: 16,
   },
 });

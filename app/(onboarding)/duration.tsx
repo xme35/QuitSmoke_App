@@ -20,15 +20,15 @@ const SelectableCard = ({ label, isSelected, onPress }: { label: string; isSelec
 
 export default function DurationScreen() {
   const { appState, setAppState } = useAppContext();
-  const [duration, setDuration] = useState(appState.duration || '');
+  const [smokingHistory, setSmokingHistory] = useState(appState.smokingHistory || '');
 
-  const handleSelect = (selectedDuration: string) => {
-    setDuration(selectedDuration);
-    setAppState((prevState) => ({ ...prevState, duration: selectedDuration }));
+  const handleSelect = (selectedHistory: string) => {
+    setSmokingHistory(selectedHistory);
+    setAppState((prevState) => ({ ...prevState, smokingHistory: selectedHistory }));
   };
 
   const handleNext = () => {
-    if (duration) {
+    if (smokingHistory) {
       // @ts-ignore
       router.push('/(onboarding)/quitting-pace');
     }
@@ -43,7 +43,7 @@ export default function DurationScreen() {
             <SelectableCard
               key={opt}
               label={opt}
-              isSelected={duration === opt}
+              isSelected={smokingHistory === opt}
               onPress={() => handleSelect(opt)}
             />
           ))}
@@ -54,9 +54,9 @@ export default function DurationScreen() {
           <ThemedText>Back</ThemedText>
         </TouchableOpacity>
         <TouchableOpacity 
-          style={[styles.nextButton, !duration && styles.nextButtonDisabled]} 
+          style={[styles.nextButton, !smokingHistory && styles.nextButtonDisabled]} 
           onPress={handleNext} 
-          disabled={!duration}
+          disabled={!smokingHistory}
         >
           <ThemedText style={styles.nextButtonText}>Next</ThemedText>
         </TouchableOpacity>

@@ -6,23 +6,23 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, TouchableOpacity, View, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { useAppContext } from '../../context/AppContext';
+import { AppState, useAppContext } from '../../context/AppContext';
 
-const OPTIONS = ['Cigarettes', 'Vapes', 'Heated Tobacco', 'Nicotine Pouch'];
+const OPTIONS = ['Cigarettes', 'Vapes', 'Heated Tobacco', 'Nicotine Pouches'];
 
-const SelectableCard = ({
-  label,
-  isSelected,
-  onPress,
-}: {
-  label: string;
-  isSelected: boolean;
-  onPress: () => void;
-}) => (
-  <TouchableOpacity
-    style={[styles.card, isSelected && styles.cardSelected]}
-    onPress={onPress}
-  >
+// Helper to map source name to AppState key
+const getProductKey = (source: string): keyof AppState | null => {
+  switch (source) {
+    case 'Cigarettes': return 'cigarettes';
+    case 'Vapes': return 'vapes';
+    case 'Heated Tobacco': return 'heatedTobacco';
+    case 'Nicotine Pouches': return 'nicotinePouches';
+    default: return null;
+  }
+};
+
+const SelectableCard = ({ label, isSelected, onPress }: { label: string; isSelected: boolean; onPress: () => void; }) => (
+  <TouchableOpacity style={[styles.card, isSelected && styles.cardSelected]} onPress={onPress}>
     <ThemedText style={styles.cardText}>{label}</ThemedText>
     {isSelected && <Feather name="check" size={24} color={Colors.light.tint} />}
   </TouchableOpacity>
@@ -33,26 +33,51 @@ export default function SourceScreen() {
   const [selectedSources, setSelectedSources] = useState<string[]>(appState.sources || []);
 
   const toggleSource = (source: string) => {
-    const newSources = selectedSources.includes(source)
+    const isSelected = selectedSources.includes(source);
+    const newSources = isSelected
       ? selectedSources.filter((s) => s !== source)
       : [...selectedSources, source];
+
     setSelectedSources(newSources);
-    setAppState((prevState) => ({ ...prevState, sources: newSources }));
+
+    // Update AppState with the new sources and initialize/clear product objects
+    setAppState(prevState => {
+      const newState = { ...prevState, sources: newSources };
+      const productKey = getProductKey(source);
+
+      if (!productKey) return newState; // Should not happen
+
+      if (isSelected) {
+        // Source was deselected, so clear its data
+        (newState[productKey] as any) = null;
+      } else {
+        // Source was selected, so initialize with default structure
+        switch (productKey) {
+          case 'cigarettes':
+            newState.cigarettes = { amount: 20, type: 'regular', frequency: 'day' };
+            break;
+          case 'vapes':
+            newState.vapes = { puffs: 100, strength: '5%', frequency: 'day' };
+            break;
+          case 'heatedTobacco':
+            newState.heatedTobacco = { sticks: 20, frequency: 'day' };
+            break;
+          case 'nicotinePouches':
+            newState.nicotinePouches = { pouches: 5, strength: '6mg', frequency: 'day' };
+            break;
+        }
+      }
+      return newState;
+    });
   };
 
-  // @ts-ignore
   const handleNext = () => router.push('/(onboarding)/product-details');
   const isNextDisabled = selectedSources.length === 0;
 
   return (
     <ThemedView style={styles.container}>
-        <ThemedView style={styles.progressContainer}>
-            <ThemedText>Step 4 of 9</ThemedText>
-        </ThemedView>
       <View style={styles.mainContent}>
-        <ThemedText type="title" style={styles.title}>
-        What are your sources of nicotine?
-        </ThemedText>
+        <ThemedText type="title" style={styles.title}>What are your sources of nicotine?</ThemedText>
         <ThemedText style={styles.subtitle}>Select all that apply.</ThemedText>
         <View style={styles.optionsContainer}>
           {OPTIONS.map((opt) => (
@@ -88,31 +113,20 @@ const styles = StyleSheet.create({
     padding: 24,
     justifyContent: 'space-between',
   },
-  progressContainer:{
-    alignItems: 'flex-end',
-  },
   mainContent: {
     flex: 1,
-    paddingTop: 40,
+    justifyContent: 'center',
   },
   title: {
     textAlign: 'center',
     marginBottom: 12,
-    lineHeight: 44, // Added line height
-    ...Platform.select({ // Added platform specific styles
-      android: {
-        includeFontPadding: false,
-      },
-    }),
   },
   subtitle: {
     textAlign: 'center',
     fontSize: 16,
     marginBottom: 32,
   },
-  optionsContainer: {
-    gap: 12,
-  },
+  optionsContainer: { gap: 12 },
   card: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -136,7 +150,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
-    marginBottom: 40,
+    paddingTop: 20, 
   },
   backButton: {
     paddingVertical: 16,

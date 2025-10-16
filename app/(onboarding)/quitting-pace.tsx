@@ -8,9 +8,9 @@ import { StyleSheet, TouchableOpacity, View, Platform } from 'react-native';
 import { useAppContext } from '../../context/AppContext';
 
 const OPTIONS = [
-    { title: 'Slow', description: 'Gradual reduction over 3-6 months' },
-    { title: 'Standard', description: 'Steady reduction over 1-3 months' },
-    { title: 'Fast', description: 'Quick reduction in under a month' },
+    { title: 'Slow', description: 'A more gradual and relaxed reduction' },
+    { title: 'Standard', description: 'A balanced and steady reduction' },
+    { title: 'Fast', description: 'A faster and more intensive reduction' },
 ];
 
 const SelectableCard = ({ title, description, isSelected, onPress }: { title: string; description: string; isSelected: boolean; onPress: () => void }) => (

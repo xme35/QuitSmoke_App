@@ -1,49 +1,203 @@
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { CountryCode } from 'react-native-country-picker-modal';
+import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import { auth, db } from '../firebase/config';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
-interface AppState {
+// ----- TYPE DEFINITIONS -----
+
+export type Frequency = 'day' | 'week' | 'month';
+
+export interface TaperingPhase {
+  phase: number;
+  durationDays: number;
+  nicotineGoalMg: number;
+}
+
+export interface ConsumptionLog {
+  product: string;
+  timestamp: string; // ISO 8601 format
+}
+
+export interface ConsumptionRecord {
+  date: string;
+  nicotineAmount: number;
+  cravings: number;
+}
+
+// Corrected AppState interface including the preferences object
+export interface AppState {
   name: string | null;
   age: number | null;
-  country: CountryCode | null;
-  countryName: string | null; // Added this line
+  countryCode: string | null;
+  countryName: string | null;
   sources: string[] | null;
-  cigarettes: { amount: number; type: string; } | null;
-  vapes: { puffs: number; strength: string; } | null;
-  heatedTobacco: { sticks: number; } | null;
-  nicotinePouches: { pouches: number; strength: string; } | null;
+  smokingHistory: string | null;
+  cigarettes: { amount: number; type: string; frequency: Frequency; } | null;
+  vapes: { puffs: number; strength: string; frequency: Frequency; } | null;
+  heatedTobacco: { sticks: number; frequency: Frequency; } | null;
+  nicotinePouches: { pouches: number; strength: string; frequency: Frequency; } | null;
   duration: string | null;
   quittingPace: string | null;
-  motivation: string | null;
-  quitDate: string | null;
+  motivation: string[] | null;
+  initialIntake?: number | null;
+  planStartDate?: string | null;
+  totalDuration?: number | null;
+  estimatedSavings?: number | null;
+  taperingSchedule?: TaperingPhase[] | null;
+  consumptionHistory?: ConsumptionRecord[] | null;
+  consumptionLog?: ConsumptionLog[] | null;
+  isOnboardingComplete?: boolean;
+  aiSummary?: string;
+  goals?: any[]; // Define more specifically if possible
+  logs?: any[]; // Define more specifically if possible
+  preferences?: {
+    baselineDailyPuffs: number;
+    costPerVapePod: number;
+    defaultConsumptionType: string;
+    heatedTobaccoSticksPerPack: number;
+    baselineDailyHeatedTobacco: number;
+    nicotineStrengthMgPerMl: number;
+    vapePuffsPerPod: number;
+    baselineDailyCigarettes: number;
+    costPerPack: number;
+    cigarettesPerPack: number;
+    nicotineStrengthMgPerCigarette: number;
+    nicotineStrengthMgPerPatch: number;
+    costPerPatch: number;
+    costPerHeatedTobaccoPack: number;
+    nicotineStrengthMgPerHeatedTobacco: number;
+    dailyNicotineGoalMg: number;
+    baselineDailyPatches: number;
+  };
 }
+
+// Corrected initial state to ensure preferences is always defined
+export const initialAppState: AppState = {
+  name: null,
+  age: null,
+  countryCode: null,
+  countryName: null,
+  sources: [],
+  smokingHistory: null,
+  cigarettes: null,
+  vapes: null,
+  heatedTobacco: null,
+  nicotinePouches: null,
+  duration: null,
+  quittingPace: null,
+  motivation: [],
+  initialIntake: null,
+  planStartDate: null,
+  taperingSchedule: null,
+  consumptionHistory: [],
+  consumptionLog: [],
+  isOnboardingComplete: false,
+  aiSummary: "",
+  goals: [],
+  logs: [],
+  preferences: {
+    baselineDailyPuffs: 50,
+    costPerVapePod: 12,
+    defaultConsumptionType: "VAPE",
+    heatedTobaccoSticksPerPack: 20,
+    baselineDailyHeatedTobacco: 10,
+    nicotineStrengthMgPerMl: 3,
+    vapePuffsPerPod: 500,
+    baselineDailyCigarettes: 10,
+    costPerPack: 20,
+    cigarettesPerPack: 20,
+    nicotineStrengthMgPerCigarette: 12,
+    nicotineStrengthMgPerPatch: 21,
+    costPerPatch: 5,
+    costPerHeatedTobaccoPack: 18,
+    nicotineStrengthMgPerHeatedTobacco: 6,
+    dailyNicotineGoalMg: 30,
+    baselineDailyPatches: 1,
+  },
+};
+
+// (The rest of the file remains the same)
 
 interface AppContextType {
   appState: AppState;
   setAppState: React.Dispatch<React.SetStateAction<AppState>>;
+  isLoading: boolean;
+  user: User | null;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [appState, setAppState] = useState<AppState>({
-    name: null,
-    age: null,
-    country: null,
-    countryName: null, // Added this line
-    sources: null,
-    cigarettes: null,
-    vapes: null,
-    heatedTobacco: null,
-    nicotinePouches: null,
-    duration: null,
-    quittingPace: null,
-    motivation: null,
-    quitDate: null,
-  });
+  const [appState, setAppState] = useState<AppState>(initialAppState);
+  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
+  const [isStateLoaded, setIsStateLoaded] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        setIsLoading(true);
+        setIsStateLoaded(false);
+      } else {
+        setAppState(initialAppState);
+        setIsLoading(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (user && !isStateLoaded) {
+      const loadState = async () => {
+        const docRef = doc(db, 'users', user.uid);
+        try {
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            const loadedState = { ...initialAppState, ...docSnap.data() };
+            setAppState(loadedState);
+          } else {
+            await setDoc(docRef, initialAppState); // Create initial state in DB if it doesn't exist
+            setAppState(initialAppState);
+          }
+        } catch (e) {
+          console.error("Failed to load state from Firestore", e);
+          setAppState(initialAppState);
+        } finally {
+          setIsLoading(false);
+          setIsStateLoaded(true);
+        }
+      };
+      loadState();
+    } else if (!user) {
+        setIsLoading(false);
+    }
+  }, [user, isStateLoaded]);
+
+  useEffect(() => {
+    if (!isLoading && user && isStateLoaded) {
+      const saveState = async () => {
+        const docRef = doc(db, 'users', user.uid);
+        try {
+          await setDoc(docRef, appState, { merge: true });
+        } catch (e) {
+          console.error("Failed to save state to Firestore", e);
+        }
+      };
+      saveState();
+    }
+  }, [appState, user, isLoading, isStateLoaded]);
+
+  const contextValue = {
+    appState,
+    setAppState,
+    isLoading,
+    user,
+  };
 
   return (
-    <AppContext.Provider value={{ appState, setAppState }}>
+    <AppContext.Provider value={contextValue}>
       {children}
     </AppContext.Provider>
   );
