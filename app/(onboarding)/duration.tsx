@@ -70,16 +70,17 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 24,
     justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.light.background,
   },
   mainContent: {
     flex: 1,
     justifyContent: 'center',
     paddingBottom: 50,
+    gap: 16,
   },
   title: {
     textAlign: 'center',
-    marginBottom: 32,
+    marginBottom: 20,
     lineHeight: 44,
     ...Platform.select({
       android: {

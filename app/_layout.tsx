@@ -1,45 +1,170 @@
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
+import type { Href } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppProvider, useAppContext } from '../context/AppContext';
 import * as SplashScreen from 'expo-splash-screen';
+import { getLoginStatus } from '@/helpers/login-status';
+import { getOnboardingStatus } from '@/helpers/onboarding-status';
 
 SplashScreen.preventAutoHideAsync();
+
+const AUTH_ROUTE: Href = '/(auth)/sign-in';
+const ONBOARDING_ROUTE: Href = '/(onboarding)/welcome';
+const DASHBOARD_ROUTE: Href = '/(tabs)/dashboard';
 
 const RootNavigator = () => {
   const { user, isLoading, appState } = useAppContext();
   const router = useRouter();
   const segments = useSegments();
+  const [hasCheckedLoginStatus, setHasCheckedLoginStatus] = useState(false);
+  const [hasCheckedOnboardingStatus, setHasCheckedOnboardingStatus] = useState(false);
+  const [storedLoginStatus, setStoredLoginStatus] = useState(false);
+  const [storedOnboardingStatus, setStoredOnboardingStatus] = useState(false);
+  const [hasHiddenSplash, setHasHiddenSplash] = useState(false);
+  const [navigationReady, setNavigationReady] = useState(false);
+  const onboardingComplete = !!appState?.isOnboardingComplete;
 
   useEffect(() => {
-    if (isLoading) {
+    let isMounted = true;
+
+    const loadLoginStatus = async () => {
+      try {
+        const status = await getLoginStatus();
+        if (isMounted) {
+          setStoredLoginStatus(status);
+        }
+      } catch (error) {
+        console.warn('Unable to read persisted login status flag', error);
+      } finally {
+        if (isMounted) {
+          setHasCheckedLoginStatus(true);
+        }
+      }
+    };
+
+    loadLoginStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!user) {
+      setStoredOnboardingStatus(false);
+      setHasCheckedOnboardingStatus(true);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    setHasCheckedOnboardingStatus(false);
+
+    const loadOnboardingStatus = async () => {
+      try {
+        const status = await getOnboardingStatus(user.uid);
+        if (isMounted) {
+          setStoredOnboardingStatus(status);
+        }
+      } catch (error) {
+        console.warn('Unable to read persisted onboarding status flag', error);
+      } finally {
+        if (isMounted) {
+          setHasCheckedOnboardingStatus(true);
+        }
+      }
+    };
+
+    loadOnboardingStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user, appState?.isOnboardingComplete]);
+
+  useEffect(() => {
+    if (isLoading || !hasCheckedLoginStatus || !hasCheckedOnboardingStatus) {
       return;
     }
 
-    try {
-      const inAuthGroup = segments[0] === '(auth)';
-      const inOnboardingGroup = segments[0] === '(onboarding)';
-      const inAppGroup = segments[0] === '(tabs)';
+    const onboardingResolved = onboardingComplete || storedOnboardingStatus;
 
-      // This is the crucial change:
-      // Redirect to onboarding only if the user is logged in, hasn't started the plan,
-      // AND is not already in the onboarding flow.
-      if (user && (!appState || !appState.planStartDate) && !inOnboardingGroup) {
-        router.replace('/(onboarding)/welcome');
-      } else if (user && appState?.planStartDate && !inAppGroup) {
-        router.replace('/(tabs)/dashboard');
-      } else if (!user && !inAuthGroup) {
-        router.replace('/(auth)/sign-in');
+    let targetGroup: string | null = null;
+    let targetRoute: Href | null = null;
+
+    if (user) {
+      if (!onboardingResolved) {
+        targetGroup = '(onboarding)';
+        targetRoute = ONBOARDING_ROUTE;
+      } else {
+        targetGroup = '(tabs)';
+        targetRoute = DASHBOARD_ROUTE;
       }
-
-      SplashScreen.hideAsync();
-
-    } catch (error) {
-      console.error('!!! CRITICAL NAVIGATION ERROR:', error);
+    } else if (!storedLoginStatus) {
+      targetGroup = '(auth)';
+      targetRoute = AUTH_ROUTE;
     }
 
-  }, [user, appState, isLoading, segments, router]);
+    const currentGroup = segments[0];
+
+    if (targetGroup && targetRoute && currentGroup !== targetGroup) {
+      if (navigationReady) {
+        setNavigationReady(false);
+      }
+      router.replace(targetRoute);
+      return;
+    }
+
+    if (!navigationReady) {
+      setNavigationReady(true);
+    }
+  }, [
+    user,
+    onboardingComplete,
+    isLoading,
+    segments,
+    router,
+    hasCheckedLoginStatus,
+    storedLoginStatus,
+    navigationReady,
+    storedOnboardingStatus,
+    hasCheckedOnboardingStatus,
+  ]);
+
+  useEffect(() => {
+    if (isLoading && navigationReady) {
+      setNavigationReady(false);
+    }
+  }, [isLoading, navigationReady]);
+
+  useEffect(() => {
+    if (navigationReady && !hasHiddenSplash) {
+      const hideSplash = async () => {
+        try {
+          await SplashScreen.hideAsync();
+        } catch (error) {
+          console.warn('Unable to hide splash screen', error);
+        } finally {
+          setHasHiddenSplash(true);
+        }
+      };
+
+      hideSplash();
+    }
+  }, [navigationReady, hasHiddenSplash]);
+
+  if (
+    isLoading ||
+    !hasCheckedLoginStatus ||
+    !hasCheckedOnboardingStatus ||
+    !navigationReady
+  ) {
+    return null;
+  }
 
   return (
     <Stack screenOptions={{ headerShown: false }}>

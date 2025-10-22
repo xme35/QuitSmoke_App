@@ -8,15 +8,15 @@ import { StyleSheet, TouchableOpacity, View, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { AppState, useAppContext } from '../../context/AppContext';
 
-const OPTIONS = ['Cigarettes', 'Vapes', 'Heated Tobacco', 'Nicotine Pouches'];
+const OPTIONS = ['Cigarette', 'Vape', 'Heated Tobacco', 'Nicotine Pouch'];
 
 // Helper to map source name to AppState key
 const getProductKey = (source: string): keyof AppState | null => {
   switch (source) {
-    case 'Cigarettes': return 'cigarettes';
-    case 'Vapes': return 'vapes';
+    case 'Cigarette': return 'cigarettes';
+    case 'Vape': return 'vapes';
     case 'Heated Tobacco': return 'heatedTobacco';
-    case 'Nicotine Pouches': return 'nicotinePouches';
+    case 'Nicotine Pouch': return 'nicotinePouches';
     default: return null;
   }
 };
@@ -54,16 +54,16 @@ export default function SourceScreen() {
         // Source was selected, so initialize with default structure
         switch (productKey) {
           case 'cigarettes':
-            newState.cigarettes = { amount: 20, type: 'regular', frequency: 'day' };
+            newState.cigarettes = { amount: 0, frequency: 'day' };
             break;
           case 'vapes':
-            newState.vapes = { puffs: 100, strength: '5%', frequency: 'day' };
+            newState.vapes = { puffs: 0, frequency: 'day' };
             break;
           case 'heatedTobacco':
-            newState.heatedTobacco = { sticks: 20, frequency: 'day' };
+            newState.heatedTobacco = { sticks: 0, frequency: 'day' };
             break;
           case 'nicotinePouches':
-            newState.nicotinePouches = { pouches: 5, strength: '6mg', frequency: 'day' };
+            newState.nicotinePouches = { pouches: 0, frequency: 'day' };
             break;
         }
       }
@@ -112,19 +112,22 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 24,
     justifyContent: 'space-between',
+    backgroundColor: Colors.light.background,
   },
   mainContent: {
     flex: 1,
     justifyContent: 'center',
+    gap: 16,
   },
   title: {
     textAlign: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   subtitle: {
     textAlign: 'center',
     fontSize: 16,
-    marginBottom: 32,
+    marginBottom: 16,
+    color: Colors.light.secondaryText,
   },
   optionsContainer: { gap: 12 },
   card: {
@@ -150,7 +153,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
-    paddingTop: 20, 
+    marginBottom: 40,
   },
   backButton: {
     paddingVertical: 16,

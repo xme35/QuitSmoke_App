@@ -20,9 +20,9 @@ const PrivacyPolicyScreen = () => {
             </View>
 
             <View style={styles.section}>
-                <ThemedText style={styles.sectionTitle}>Use of Generative AI</ThemedText>
-                <Text style={styles.paragraph}>To generate your personalized tapering schedule, we send a non-identifiable summary of your anonymous data (nicotine intake, quitting pace, etc.) to Google's Generative AI services. </Text>
-                <Text style={styles.paragraph}>We do not send any personal identifiers like your name or email. The sole purpose is to receive the AI-generated response that powers the app's features. The data is not used for any other purpose. We encourage you to review Google's Privacy Policy.</Text>
+                <ThemedText style={styles.sectionTitle}>Automated Plan Generation</ThemedText>
+                <Text style={styles.paragraph}>To generate your personalized tapering schedule, we send a non-identifiable summary of your anonymous data (nicotine intake, quitting pace, etc.) to Google's generative services. </Text>
+                <Text style={styles.paragraph}>We do not send any personal identifiers like your name or email. The sole purpose is to receive the automated response that powers the app's features. The data is not used for any other purpose. We encourage you to review Google's Privacy Policy.</Text>
             </View>
             
             <View style={styles.section}>

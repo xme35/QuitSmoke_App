@@ -35,25 +35,48 @@ export default function SummaryScreen() {
     <ThemedView style={styles.container}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.mainContent}>
         <ThemedText type="title" style={styles.title}>
-          Ready to create your plan?
+          Ready to create{'\n'} your plan?
         </ThemedText>
         <ThemedText style={styles.subtitle}>
           Review your information before we generate your personalized plan.
         </ThemedText>
 
         <View style={styles.summaryContainer}>
-          <InfoRow label="Name" value={appState.name} />
           <InfoRow label="Age" value={appState.age} />
-          {/* Correctly use countryName as the value */}
           <InfoRow label="Country" value={appState.countryName} />
 
-          {appState.sources?.includes('Cigarettes') && appState.cigarettes && <InfoRow label="Cigarettes" value={`${appState.cigarettes.amount}/day (${appState.cigarettes.type})`} />}
-          {appState.sources?.includes('Vapes') && appState.vapes && <InfoRow label="Vapes" value={`~${appState.vapes.puffs} puffs/day (${appState.vapes.strength})`} />}
-          {appState.sources?.includes('Heated Tobacco') && appState.heatedTobacco && <InfoRow label="Heated Tobacco" value={`${appState.heatedTobacco.sticks} sticks/day`} />}
-          {appState.sources?.includes('Nicotine Pouches') && appState.nicotinePouches && <InfoRow label="Nicotine Pouches" value={`${appState.nicotinePouches.pouches}/day (${appState.nicotinePouches.strength})`} />}
-
+          <View>
+            <ThemedText style={[styles.infoLabel, {marginBottom: 8}]}>Sources</ThemedText>
+            <View style={{ gap: 8, paddingLeft: 8 }}>
+                {appState.sources?.includes('Cigarette') && appState.cigarettes && 
+                  <View style={styles.infoRow}>
+                    <ThemedText style={styles.infoLabel}>• Cigarette</ThemedText>
+                    <ThemedText style={styles.infoValue}>{`${appState.cigarettes.amount}/day`}</ThemedText>
+                  </View>
+                }
+                {appState.sources?.includes('Vape') && appState.vapes &&
+                  <View style={styles.infoRow}>
+                    <ThemedText style={styles.infoLabel}>• Vape</ThemedText>
+                    <ThemedText style={styles.infoValue}>{`${appState.vapes.puffs} puffs/day`}</ThemedText>
+                  </View>
+                }
+                {appState.sources?.includes('Heated Tobacco') && appState.heatedTobacco &&
+                  <View style={styles.infoRow}>
+                    <ThemedText style={styles.infoLabel}>• Heated Tobacco</ThemedText>
+                    <ThemedText style={styles.infoValue}>{`${appState.heatedTobacco.sticks} sticks/day`}</ThemedText>
+                  </View>
+                }
+                {appState.sources?.includes('Nicotine Pouch') && appState.nicotinePouches &&
+                  <View style={styles.infoRow}>
+                    <ThemedText style={styles.infoLabel}>• Nicotine Pouch</ThemedText>
+                    <ThemedText style={styles.infoValue}>{`${appState.nicotinePouches.pouches}/day`}</ThemedText>
+                  </View>
+                }
+            </View>
+          </View>
+          
+          <InfoRow label="Nicotine Use" value={appState.smokingHistory} />
           <InfoRow label="Quitting Pace" value={appState.quittingPace} />
-          <InfoRow label="Duration" value={appState.duration} />
           <InfoRow label="Motivation" value={appState.motivation} />
         </View>
       </ScrollView>
@@ -74,23 +97,27 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 24,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.light.background,
+    justifyContent: 'space-between',
   },
   scrollView: {
     flex: 1,
   },
   mainContent: {
-    paddingBottom: 120, // To avoid being hidden by the footer
+    paddingBottom: 48,
+    gap: 20,
   },
   title: {
     textAlign: 'center',
+    marginTop: 80,
     marginBottom: 12,
   },
   subtitle: {
     textAlign: 'center',
     fontSize: 18,
-    marginBottom: 32,
+    marginBottom: 16,
     paddingHorizontal: 24,
+    color: Colors.light.secondaryText,
   },
   summaryContainer: {
     backgroundColor: '#F9FAFB',
@@ -105,25 +132,19 @@ const styles = StyleSheet.create({
   },
   infoLabel: {
     fontSize: 16,
-    color: '#6B7280',
+    color: Colors.light.secondaryText,
   },
   infoValue: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#1F2937',
-    maxWidth: '60%',
-    textAlign: 'right',
   },
   footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 24,
-    right: 24,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 20,
-    backgroundColor: '#FFFFFF', // To ensure it has a solid background
+    width: '100%',
+    marginBottom: 40,
   },
   backButton: {
     paddingVertical: 16,

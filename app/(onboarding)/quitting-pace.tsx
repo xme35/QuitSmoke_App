@@ -9,7 +9,7 @@ import { useAppContext } from '../../context/AppContext';
 
 const OPTIONS = [
     { title: 'Slow', description: 'A more gradual and relaxed reduction' },
-    { title: 'Standard', description: 'A balanced and steady reduction' },
+    { title: 'Standard', description: 'A balanced reduction' },
     { title: 'Fast', description: 'A faster and more intensive reduction' },
 ];
 
@@ -46,8 +46,8 @@ export default function QuittingPaceScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={styles.mainContent}>
-        <ThemedText type="title" style={styles.title}>What quitting pace suits you?</ThemedText>
-        <ThemedText style={styles.subtitle}>We'll create a personalized plan based on your choice.</ThemedText>
+        <ThemedText type="title" style={styles.title}>What quitting pace{'\n'} suits you?</ThemedText>
+        <ThemedText style={styles.subtitle}>We'll create a personalized plan{'\n'} based on your choice.</ThemedText>
         <View style={styles.optionsContainer}>
           {OPTIONS.map((opt) => (
             <SelectableCard
@@ -81,16 +81,17 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 24,
     justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.light.background,
   },
   mainContent: {
     flex: 1,
     justifyContent: 'center',
     paddingBottom: 50,
+    gap: 20,
   },
   title: {
     textAlign: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
     lineHeight: 44,
     ...Platform.select({
       android: {
@@ -101,8 +102,8 @@ const styles = StyleSheet.create({
   subtitle: {
     textAlign: 'center',
     fontSize: 16,
-    color: '#6B7280',
-    marginBottom: 32,
+    color: Colors.light.secondaryText,
+    marginBottom: 16,
   },
   optionsContainer: {
     gap: 12,

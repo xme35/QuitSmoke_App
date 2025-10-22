@@ -59,7 +59,7 @@ export default function DashboardScreen() {
                 totalNicotine += preferences?.nicotineStrengthMgPerHeatedTobacco || 0;
                 break;
             case 'Nicotine Pouch':
-                totalNicotine += preferences?.nicotineStrengthMgPerPatch || 0;
+                totalNicotine += preferences?.nicotineStrengthMgPerPouch || 0;
                 break;
         }
     });

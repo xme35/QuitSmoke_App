@@ -1,8 +1,9 @@
+
 import { ThemedText } from '../../components/themed-text';
 import { ThemedView } from '../../components/themed-view';
 import { Colors } from '../../constants/theme';
 import { router } from 'expo-router';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { StyleSheet, TouchableOpacity, View, Platform, Animated } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { useAppContext } from '../../context/AppContext';
@@ -11,6 +12,12 @@ export default function AgeScreen() {
   const { appState, setAppState } = useAppContext();
   const [age, setAge] = useState(appState.age || 25);
   const scaleValue = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (appState.age === null) {
+      setAppState((prevState) => ({ ...prevState, age: 25 }));
+    }
+  }, []);
 
   const handleAgeChange = (newAge: number) => {
     setAge(newAge);
@@ -83,13 +90,14 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 24,
     justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.light.background,
   },
   mainContent: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingBottom: 50,
+    gap: 24,
   },
   sliderWrapper: {
     width: '100%',

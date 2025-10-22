@@ -7,7 +7,7 @@ import { useAppContext } from '../../context/AppContext';
 import { Colors } from '../../constants/theme';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { differenceInDays, add, format, eachDayOfInterval, startOfDay, subDays } from 'date-fns';
-import Svg, { Line, G, Circle, Text as SvgText, Rect } from 'react-native-svg';
+import Svg, { Line, G, Circle, Text as SvgText, Rect, Path } from 'react-native-svg';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -25,7 +25,7 @@ export default function ProgressScreen() {
         return () => clearInterval(timer);
     }, []);
 
-    const { planStartDate, totalDuration, taperingSchedule, estimatedSavings, consumptionLog, preferences } = appState;
+    const { planStartDate, totalDuration, estimatedSavings, consumptionLog, preferences } = appState;
 
     const timeUntilPlanEnds = useMemo(() => {
         if (!planStartDate || !totalDuration) return { days: 0, hours: 0, minutes: 0, seconds: 0 };
@@ -55,43 +55,6 @@ export default function ProgressScreen() {
         return `€${savedSoFar.toFixed(2)}`;
     }, [estimatedSavings, totalDuration, daysSinceStart]);
 
-    const weeklyIntakeData = useMemo(() => {
-        const today = startOfDay(new Date());
-        const weekStart = subDays(today, 6);
-        const interval = eachDayOfInterval({ start: weekStart, end: today });
-
-        return interval.map(date => {
-            const logsForDay = (consumptionLog || []).filter(log => startOfDay(new Date(log.timestamp)).getTime() === date.getTime());
-            
-            let totalNicotine = 0;
-            logsForDay.forEach(log => {
-                switch (log.product) {
-                    case 'Cigarette':
-                        totalNicotine += preferences?.nicotineStrengthMgPerCigarette || 0;
-                        break;
-                    case 'Vape (Puff)':
-                        const nicotinePerMl = preferences?.nicotineStrengthMgPerMl || 0;
-                        const puffsPerPod = preferences?.vapePuffsPerPod || 1;
-                        const vapeNicotinePerPuff = (nicotinePerMl * 2) / puffsPerPod;
-                        totalNicotine += vapeNicotinePerPuff || 0;
-                        break;
-                    case 'Heated Tobacco':
-                        totalNicotine += preferences?.nicotineStrengthMgPerHeatedTobacco || 0;
-                        break;
-                    case 'Nicotine Pouch':
-                        totalNicotine += preferences?.nicotineStrengthMgPerPatch || 0;
-                        break;
-                }
-            });
-
-            return {
-                date,
-                value: totalNicotine,
-            };
-        });
-
-    }, [consumptionLog, preferences]);
-
     const achievements = [
         { label: 'Money Saved', value: moneySaved, iconName: 'wallet' },
         { label: 'Life Time Gained', value: '2d 5h', iconName: 'heartbeat' },
@@ -116,60 +79,6 @@ export default function ProgressScreen() {
         </View>
     );
     
-    const chartHeight = 200;
-    const chartWidth = screenWidth - 80;
-    const yMaxWeekly = Math.max(...weeklyIntakeData.map(d => d.value), 1);
-    const xPointWeekly = (index: number) => (weeklyIntakeData.length > 1 ? (chartWidth / (weeklyIntakeData.length -1)) * index : chartWidth / 2);
-    const yPointWeekly = (value: number) => chartHeight - ((value / yMaxWeekly) * chartHeight) + 10;
-
-    const TaperingPlanChart = () => {
-        if (!taperingSchedule || taperingSchedule.length === 0) return <ThemedText>No plan created yet.</ThemedText>;
-
-        const barWidth = 40;
-        const chartWidth = taperingSchedule.length * (barWidth + 10) - 10;
-        const yMaxTaper = Math.max(...taperingSchedule.map(p => p.nicotineGoalMg), 1);
-        const yPointTaper = (value: number) => chartHeight - ((value / yMaxTaper) * chartHeight);
-
-        return (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20}}>
-                <Svg height={chartHeight + 40} width={chartWidth + 40}>
-                    <G y={-10}>
-                        {taperingSchedule.map((phase, index) => (
-                            <G key={index} x={index * (barWidth + 10)}>
-                                <Rect
-                                    y={yPointTaper(phase.nicotineGoalMg)}
-                                    width={barWidth}
-                                    height={chartHeight - yPointTaper(phase.nicotineGoalMg)}
-                                    fill={themeColors.tint}
-                                    rx={8}
-                                />
-                                <SvgText
-                                    x={barWidth / 2}
-                                    y={chartHeight + 20}
-                                    fill={themeColors.secondaryText}
-                                    fontSize="12"
-                                    textAnchor="middle"
-                                >
-                                    {`Phase ${index + 1}`}
-                                </SvgText>
-                                <SvgText
-                                    x={barWidth / 2}
-                                    y={yPointTaper(phase.nicotineGoalMg) - 5}
-                                    fill={themeColors.text}
-                                    fontSize="12"
-                                    fontWeight="bold"
-                                    textAnchor="middle"
-                                >
-                                    {`${phase.nicotineGoalMg}mg`}
-                                </SvgText>
-                            </G>
-                        ))}
-                    </G>
-                </Svg>
-            </ScrollView>
-        )
-    }
-
     return (
         <ThemedView style={{flex: 1}}>
         <ScrollView style={styles.container}>
@@ -191,60 +100,6 @@ export default function ProgressScreen() {
                     </View>
                 </View>
 
-                <ThemedText style={[styles.sectionTitle, { marginTop: 24 }]}>This Week's Nicotine Intake (mg)</ThemedText>
-                <View style={[styles.chartCard, { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF'}]}>
-                    {weeklyIntakeData.length > 1 ? (
-                        <Svg height={chartHeight + 40} width={chartWidth}> 
-                            <G y={-10}> 
-                                {weeklyIntakeData.map((d, i) => {
-                                    if (i === weeklyIntakeData.length - 1) return null;
-                                    return (
-                                        <Line
-                                            key={`line-${i}`}
-                                            x1={xPointWeekly(i)}
-                                            y1={yPointWeekly(d.value)}
-                                            x2={xPointWeekly(i + 1)}
-                                            y2={yPointWeekly(weeklyIntakeData[i + 1].value)}
-                                            stroke={themeColors.tint}
-                                            strokeWidth={3}
-                                            strokeLinecap='round'
-                                        />
-                                    );
-                                })}
-                                {weeklyIntakeData.map((d, i) => (
-                                    <Circle
-                                        key={`circle-${i}`}
-                                        cx={xPointWeekly(i)}
-                                        cy={yPointWeekly(d.value)}
-                                        r={5}
-                                        fill={'white'}
-                                        stroke={themeColors.tint}
-                                        strokeWidth={2}
-                                    />
-                                ))}
-                                {weeklyIntakeData.map((d, i) => (
-                                    <SvgText
-                                        key={`label-${i}`}
-                                        x={xPointWeekly(i)}
-                                        y={chartHeight + 20}
-                                        fill={themeColors.secondaryText}
-                                        fontSize="12"
-                                        textAnchor="middle"
-                                    >
-                                        {format(d.date, 'EEE')}
-                                    </SvgText>
-                                ))}
-                            </G>
-                        </Svg>
-                    ) : (
-                        <ThemedText style={{textAlign: 'center', paddingVertical: 40, opacity: 0.7}}>Not enough data to display chart.</ThemedText>
-                    )}
-                </View>
-
-                <ThemedText style={[styles.sectionTitle, { marginTop: 24 }]}>Your Tapering Plan</ThemedText>
-                <View style={[styles.chartCard, { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF'}]}>
-                    <TaperingPlanChart />
-                </View>
             </View>
         </ScrollView>
         </ThemedView>

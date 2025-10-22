@@ -2,7 +2,7 @@ export enum ConsumptionType {
   VAPE = 'vape',
   CIGARETTE = 'cigarette',
   HEATED_TOBACCO = 'heated_tobacco',
-  PATCH = 'patch',
+  NICOTINE_POUCH = 'nicotine_pouch',
 }
 
 export interface Log {
@@ -20,8 +20,13 @@ export enum GoalType {
 
 export interface TaperingPhase {
   phase: number;
+  phaseName: string;
+  psychologicalRole: string;
   durationDays: number;
   nicotineGoalMg: number;
+  totalReductionPercent: number;
+  dailyTargetsMg: number[];
+  notes?: string | null;
 }
 
 export interface Goal {
@@ -39,7 +44,7 @@ export interface UserPreference {
   nicotineStrengthMgPerMl: number; // For vape
   nicotineStrengthMgPerCigarette: number;
   nicotineStrengthMgPerHeatedTobacco: number;
-  nicotineStrengthMgPerPatch: number; // Nicotine in a single patch
+  nicotineStrengthMgPerPouch: number; // Nicotine in a single pouch
   dailyNicotineGoalMg: number;
   costPerPack: number;
   cigarettesPerPack: number;
@@ -47,9 +52,9 @@ export interface UserPreference {
   vapePuffsPerPod: number;
   costPerHeatedTobaccoPack: number;
   heatedTobaccoSticksPerPack: number;
-  costPerPatch: number;
+  costPerPouch: number;
   baselineDailyCigarettes: number; // For money saved calculation
   baselineDailyPuffs: number; // For money saved calculation
   baselineDailyHeatedTobacco: number;
-  baselineDailyPatches: number;
+  baselineDailyPouches: number;
 }

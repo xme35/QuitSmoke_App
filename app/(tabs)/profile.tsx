@@ -7,18 +7,53 @@ import { useAppContext, TaperingPhase, initialAppState } from '../../context/App
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { Colors } from '../../constants/theme';
+import { clearLoginStatus } from '@/helpers/login-status';
+import { clearOnboardingStatus, setOnboardingStatus } from '@/helpers/onboarding-status';
+import { signOut } from 'firebase/auth';
+import { auth } from '@/firebase/config';
 
-const getDailyLimitForDate = (date: Date, planStartDate?: string | null, taperingSchedule?: TaperingPhase[] | null): number => {
+const getDailyLimitForDate = (
+    date: Date,
+    planStartDate?: string | null,
+    taperingSchedule?: TaperingPhase[] | null,
+): number => {
     if (!planStartDate || !taperingSchedule || taperingSchedule.length === 0) return 0;
+
     const startDate = new Date(planStartDate);
     const daysIntoPlan = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 3600 * 24));
-    if (daysIntoPlan < 0) return taperingSchedule[0]?.nicotineGoalMg || 0;
+
+    if (Number.isNaN(daysIntoPlan)) return 0;
+
+    if (daysIntoPlan < 0) {
+        const firstPhase = taperingSchedule[0];
+        if (!firstPhase) return 0;
+        if (Array.isArray(firstPhase.dailyTargetsMg) && firstPhase.dailyTargetsMg.length > 0) {
+            return firstPhase.dailyTargetsMg[0];
+        }
+        return firstPhase.nicotineGoalMg;
+    }
+
     let cumulativeDays = 0;
     for (const phase of taperingSchedule) {
+        const phaseStartIndex = cumulativeDays;
         cumulativeDays += phase.durationDays;
-        if (daysIntoPlan < cumulativeDays) return phase.nicotineGoalMg;
+
+        if (daysIntoPlan < cumulativeDays) {
+            const dayIndexWithinPhase = daysIntoPlan - phaseStartIndex;
+            if (Array.isArray(phase.dailyTargetsMg) && phase.dailyTargetsMg.length === phase.durationDays) {
+                const target = phase.dailyTargetsMg[Math.min(Math.max(dayIndexWithinPhase, 0), phase.dailyTargetsMg.length - 1)];
+                return Math.max(0, target);
+            }
+            return phase.nicotineGoalMg;
+        }
     }
-    return taperingSchedule[taperingSchedule.length - 1]?.nicotineGoalMg || 0;
+
+    const lastPhase = taperingSchedule[taperingSchedule.length - 1];
+    if (!lastPhase) return 0;
+    if (Array.isArray(lastPhase.dailyTargetsMg) && lastPhase.dailyTargetsMg.length > 0) {
+        return lastPhase.dailyTargetsMg[lastPhase.dailyTargetsMg.length - 1];
+    }
+    return lastPhase.nicotineGoalMg;
 };
 
 interface ConfirmationModalProps {
@@ -44,7 +79,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ visible, onclose,
             onRequestClose={onclose}
         >
             <View style={styles.modalContainer}>
-                <ThemedView style={styles.modalView}>
+                <ThemedView style={[styles.modalView, { backgroundColor: themeColors.background }]}>
                     <ThemedText style={styles.modalTitle}>{title}</ThemedText>
                     <ThemedText style={styles.modalText}>
                         This action is irreversible. To confirm, please type '{challengeText}' in the box below.
@@ -78,7 +113,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ visible, onclose,
 
 
 export default function ProfileScreen() {
-    const { appState, setAppState } = useAppContext();
+    const { appState, setAppState, user } = useAppContext();
     const router = useRouter();
     const colorScheme = useColorScheme() ?? 'light';
     const themeColors = Colors[colorScheme];
@@ -105,6 +140,9 @@ export default function ProfileScreen() {
     const handleLogout = async () => {
         try {
             setAppState(initialAppState);
+            await clearLoginStatus();
+            await clearOnboardingStatus(user?.uid);
+            await signOut(auth);
             router.replace('/(auth)/sign-in' as any);
             Alert.alert('Logged Out', 'You have been successfully logged out.');
         } catch (error) {
@@ -113,12 +151,13 @@ export default function ProfileScreen() {
         }
     };
 
-    const handleResetPlan = () => {
+    const handleResetPlan = async () => {
         if (newPlanConfirmation.toLowerCase() === 'new plan') {
             setAppState(prevState => ({
                 ...initialAppState,
                 name: prevState.name,
             }));
+            await setOnboardingStatus(false, user?.uid);
             setNewPlanModalVisible(false);
             setNewPlanConfirmation('');
             router.replace('/(onboarding)/welcome' as any);
@@ -133,6 +172,9 @@ export default function ProfileScreen() {
                 setDeleteModalVisible(false);
                 setDeleteConfirmation('');
                 setAppState(initialAppState);
+                await clearLoginStatus();
+                await clearOnboardingStatus(user?.uid);
+                await signOut(auth);
                 router.replace('/(auth)/sign-in' as any);
                 Alert.alert('Account Deleted', 'Your account has been permanently deleted.');
             } catch (error) {
@@ -142,6 +184,11 @@ export default function ProfileScreen() {
         } else {
             Alert.alert('Incorrect Confirmation', 'Please type "delete" to confirm.');
         }
+    };
+
+    const cardStyle = {
+        backgroundColor: colorScheme === 'light' ? '#FFFFFF' : '#1F2933',
+        ...styles.card
     };
 
     return (
@@ -167,7 +214,7 @@ export default function ProfileScreen() {
                 buttonlabel="Confirm and Delete"
             />
 
-            <ThemedView style={styles.section}>
+            <ThemedView style={cardStyle}>
                 <ThemedText style={styles.sectionTitle}>My Plan</ThemedText>
                 <View style={styles.infoRow}>
                     <ThemedText style={styles.infoLabel}>Initial Daily Intake</ThemedText>
@@ -183,7 +230,7 @@ export default function ProfileScreen() {
                 </View>
             </ThemedView>
 
-            <ThemedView style={styles.section}>
+            <ThemedView style={cardStyle}>
                 <ThemedText style={styles.sectionTitle}>Actions</ThemedText>
                 <TouchableOpacity style={styles.actionButton} onPress={() => setNewPlanModalVisible(true)}>
                     <FontAwesome5 name="redo" size={16} color={themeColors.tint} />
@@ -191,7 +238,7 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
             </ThemedView>
 
-            <ThemedView style={styles.section}>
+            <ThemedView style={cardStyle}>
                 <ThemedText style={styles.sectionTitle}>Settings</ThemedText>
                 <View style={styles.settingRow}>
                     <FontAwesome5 name="bell" size={16} color={themeColors.icon} />
@@ -204,20 +251,8 @@ export default function ProfileScreen() {
                     />
                 </View>
             </ThemedView>
-            
-            <ThemedView style={styles.section}>
-                <ThemedText style={styles.sectionTitle}>Account</ThemedText>
-                <TouchableOpacity style={styles.actionButton} onPress={handleLogout}>
-                    <FontAwesome5 name="sign-out-alt" size={16} color={themeColors.error} />
-                    <ThemedText style={[styles.actionButtonText, { color: themeColors.error }]}>Logout</ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionButton, {marginTop: 10}]} onPress={() => setDeleteModalVisible(true)}>
-                    <FontAwesome5 name="trash" size={16} color={themeColors.error} />
-                    <ThemedText style={[styles.actionButtonText, { color: themeColors.error }]}>Delete Account</ThemedText>
-                </TouchableOpacity>
-            </ThemedView>
 
-            <ThemedView style={styles.section}>
+            <ThemedView style={cardStyle}>
                 <ThemedText style={styles.sectionTitle}>Legal</ThemedText>
                 <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/privacy')}>
                     <FontAwesome5 name="shield-alt" size={16} color={themeColors.icon} />
@@ -228,12 +263,24 @@ export default function ProfileScreen() {
                     <ThemedText style={[styles.actionButtonText, {color: themeColors.icon}]}>Terms of Service</ThemedText>
                 </TouchableOpacity>
             </ThemedView>
+
+            <ThemedView style={cardStyle}>
+                <ThemedText style={styles.sectionTitle}>Account</ThemedText>
+                <TouchableOpacity style={styles.actionButton} onPress={handleLogout}>
+                    <FontAwesome5 name="sign-out-alt" size={16} color={themeColors.error} />
+                    <ThemedText style={[styles.actionButtonText, { color: themeColors.error }]}>Logout</ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.actionButton, {marginTop: 10}]} onPress={() => setDeleteModalVisible(true)}>
+                    <FontAwesome5 name="trash" size={16} color={themeColors.error} />
+                    <ThemedText style={[styles.actionButtonText, { color: themeColors.error }]}>Delete Account</ThemedText>
+                </TouchableOpacity>
+            </ThemedView>
         </ScrollView>
     );
 }
 
 const styles = StyleSheet.create({
-    section: { 
+    card: { 
         marginHorizontal: 15, 
         marginVertical: 10, 
         borderRadius: 12, 

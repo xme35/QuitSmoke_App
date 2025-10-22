@@ -1,11 +1,13 @@
+
 import { Modal, FlatList, TouchableOpacity, View, TextInput, StyleSheet } from 'react-native';
 import { useState } from 'react';
 import { ThemedText } from './themed-text';
-import { countries } from '../constants/countries';
+import { countries } from '../data/countries';
+import { getCountryFlagEmoji } from '../helpers/get-country-flag';
 
 interface CountryPickerModalProps {
   visible: boolean;
-  onSelect: (country: { name: string; code: string }) => void;
+  onSelect: (country: { name: string; code: string; currency: string; symbol: string; }) => void;
   onClose: () => void;
 }
 
@@ -18,75 +20,78 @@ export function CountryPickerModal({ visible, onSelect, onClose }: CountryPicker
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <ThemedText type="title" style={styles.title}>Select Country</ThemedText>
-          <TouchableOpacity onPress={onClose}>
-            <ThemedText style={styles.closeButton}>✕</ThemedText>
-          </TouchableOpacity>
-        </View>
-        
+      <View style={styles.modalContainer}>
+        <ThemedText style={styles.modalTitle}>Select a Country</ThemedText>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search countries..."
+          placeholder="Search..."
           value={search}
           onChangeText={setSearch}
         />
-
         <FlatList
           data={filteredCountries}
-          keyExtractor={(item) => item.code}
+          keyExtractor={item => item.code}
           renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.countryItem}
-              onPress={() => {
-                onSelect({ name: item.name, code: item.code });
-                setSearch('');
-              }}
-            >
+            <TouchableOpacity style={styles.countryItem} onPress={() => onSelect(item)}>
+              <ThemedText style={styles.countryEmoji}>{getCountryFlagEmoji(item.code)}</ThemedText>
               <ThemedText style={styles.countryName}>{item.name}</ThemedText>
             </TouchableOpacity>
           )}
         />
+        <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+          <ThemedText style={styles.closeButtonText}>Close</ThemedText>
+        </TouchableOpacity>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  modalContainer: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    paddingTop: 50,
+    paddingHorizontal: 20,
+    backgroundColor: '#fff',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  title: {
-    fontSize: 20,
-  },
-  closeButton: {
-    fontSize: 24,
-    color: '#6B7280',
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 20,
   },
   searchInput: {
-    margin: 16,
-    padding: 12,
-    borderWidth: 1,
+    height: 45,
     borderColor: '#E5E7EB',
+    borderWidth: 1,
     borderRadius: 8,
+    paddingHorizontal: 15,
+    marginBottom: 20,
     fontSize: 16,
   },
   countryItem: {
-    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
+  countryEmoji: {
+    fontSize: 24,
+    marginRight: 15,
+  },
   countryName: {
+    fontSize: 18,
+  },
+  closeButton: {
+    marginTop: 20,
+    backgroundColor: '#6B7280',
+    paddingVertical: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  closeButtonText: {
+    color: '#fff',
     fontSize: 16,
+    fontWeight: 'bold',
   },
 });

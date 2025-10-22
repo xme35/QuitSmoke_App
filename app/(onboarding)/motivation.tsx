@@ -95,12 +95,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 24,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.light.background,
     justifyContent: 'space-between',
   },
   mainContent: {
     flex: 1,
-    paddingTop: 80,
+    justifyContent: 'center',
+    paddingBottom: 50,
+    gap: 16,
   },
   title: {
     textAlign: 'center',
@@ -110,8 +112,8 @@ const styles = StyleSheet.create({
   subtitle: {
     textAlign: 'center',
     fontSize: 16,
-    marginBottom: 40,
-    color: '#6B7280',
+    marginBottom: 16,
+    color: Colors.light.secondaryText,
   },
   optionsContainer: {
     gap: 12,

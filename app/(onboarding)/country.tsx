@@ -6,24 +6,31 @@ import { useState } from 'react';
 import { StyleSheet, TouchableOpacity, View, Platform } from 'react-native';
 import { useAppContext } from '../../context/AppContext';
 import { CountryPickerModal } from '../../components/CountryPickerModal';
+import { getCountryFlagEmoji } from '../../helpers/get-country-flag';
 
 export default function CountryScreen() {
   const { appState, setAppState } = useAppContext();
-  const [countryName, setCountryName] = useState<string | null>(appState.countryName || null);
+  const [selectedCountry, setSelectedCountry] = useState<{ name: string; code: string; currency: string; symbol: string; } | null>(
+    appState.countryName && appState.countryCode && appState.currencyCode && appState.currencySymbol
+      ? { name: appState.countryName, code: appState.countryCode, currency: appState.currencyCode, symbol: appState.currencySymbol }
+      : null
+  );
   const [pickerVisible, setPickerVisible] = useState(false);
 
-  const onSelect = (country: { name: string; code: string }) => {
-    setCountryName(country.name);
-    setAppState((prevState) => ({ 
-      ...prevState, 
-      countryName: country.name, 
-      countryCode: country.code as any
+  const onSelect = (country: { name: string; code: string; currency: string; symbol: string; }) => {
+    setSelectedCountry(country);
+    setAppState((prevState) => ({
+      ...prevState,
+      countryName: country.name,
+      countryCode: country.code,
+      currencyCode: country.currency,
+      currencySymbol: country.symbol,
     }));
     setPickerVisible(false);
   };
 
   const handleNext = () => {
-    if (countryName) {
+    if (selectedCountry) {
       // @ts-ignore
       router.push('/(onboarding)/source');
     }
@@ -39,13 +46,20 @@ export default function CountryScreen() {
           This helps us show your savings{'\n'}in your local currency.
         </ThemedText>
         
-        <TouchableOpacity 
-          style={styles.pickerButton} 
+        <TouchableOpacity
+          style={styles.pickerButton}
           onPress={() => setPickerVisible(true)}
         >
-          <ThemedText style={styles.pickerButtonText}>
-            {countryName || 'Select a country'}
-          </ThemedText>
+          {selectedCountry ? (
+            <View style={styles.selectedCountry}>
+              <ThemedText style={styles.flagText}>
+                {getCountryFlagEmoji(selectedCountry.code)}
+              </ThemedText>
+              <ThemedText style={styles.pickerButtonText}>{selectedCountry.name}</ThemedText>
+            </View>
+          ) : (
+            <ThemedText style={styles.pickerButtonText}>Select a country</ThemedText>
+          )}
         </TouchableOpacity>
         
         <CountryPickerModal
@@ -59,10 +73,10 @@ export default function CountryScreen() {
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <ThemedText>Back</ThemedText>
         </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.nextButton, !countryName && styles.nextButtonDisabled]}
-          onPress={handleNext} 
-          disabled={!countryName}
+        <TouchableOpacity
+          style={[styles.nextButton, !selectedCountry && styles.nextButtonDisabled]}
+          onPress={handleNext}
+          disabled={!selectedCountry}
         >
           <ThemedText style={styles.nextButtonText}>Next</ThemedText>
         </TouchableOpacity>
@@ -76,7 +90,7 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 24,
     justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.light.background,
   },
   mainContent: {
     flex: 1,
@@ -86,8 +100,8 @@ const styles = StyleSheet.create({
   },
   title: {
     textAlign: 'center',
-    marginBottom: 12,
-    lineHeight: 44, 
+    marginBottom: 8,
+    lineHeight: 44,
     ...Platform.select({
       android: {
         includeFontPadding: false,
@@ -96,9 +110,9 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     textAlign: 'center',
-    marginBottom: 48,
+    marginBottom: 24,
     fontSize: 16,
-    color: '#6B7280',
+    color: Colors.light.secondaryText,
     paddingHorizontal: 20,
     lineHeight: 24,
   },
@@ -111,6 +125,14 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
+  },
+  selectedCountry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  flagText: {
+    fontSize: 20,
+    marginRight: 12,
   },
   pickerButtonText: {
     fontSize: 18,
