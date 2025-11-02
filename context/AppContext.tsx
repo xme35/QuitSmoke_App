@@ -56,6 +56,7 @@ export interface AppState {
   totalDuration?: number | null;
   reductionInterval?: number | null;
   estimatedSavings?: number | null;
+  primaryDailyTargetMg?: number | null;
   taperingSchedule?: TaperingPhase[] | null;
   consumptionHistory?: ConsumptionRecord[] | null;
   consumptionLog?: ConsumptionLog[] | null;
@@ -64,23 +65,11 @@ export interface AppState {
   goals?: any[]; // Define more specifically if possible
   logs?: any[]; // Define more specifically if possible
   preferences?: {
-    baselineDailyPuffs: number;
-    costPerVapePod: number;
-    defaultConsumptionType: string;
-    heatedTobaccoSticksPerPack: number;
-    baselineDailyHeatedTobacco: number;
     nicotineStrengthMgPerMl: number;
     vapePuffsPerPod: number;
-    baselineDailyCigarettes: number;
-    costPerPack: number;
-    cigarettesPerPack: number;
     nicotineStrengthMgPerCigarette: number;
-    nicotineStrengthMgPerPouch: number;
-    costPerPouch: number;
-    costPerHeatedTobaccoPack: number;
     nicotineStrengthMgPerHeatedTobacco: number;
-    dailyNicotineGoalMg: number;
-    baselineDailyPouches: number;
+    nicotineStrengthMgPerPouch: number;
   };
 }
 
@@ -113,27 +102,16 @@ export const initialAppState: AppState = {
   planFramework: null,
   planCurrency: null,
   isOnboardingComplete: false,
+  primaryDailyTargetMg: null,
   aiSummary: "",
   goals: [],
   logs: [],
   preferences: {
-    baselineDailyPuffs: 0,
-    costPerVapePod: 12,
-    defaultConsumptionType: "VAPE",
-    heatedTobaccoSticksPerPack: 20,
-    baselineDailyHeatedTobacco: 0,
     nicotineStrengthMgPerMl: 3,
     vapePuffsPerPod: 500,
-    baselineDailyCigarettes: 0,
-    costPerPack: 20,
-    cigarettesPerPack: 20,
     nicotineStrengthMgPerCigarette: 12,
-    nicotineStrengthMgPerPouch: 21,
-    costPerPouch: 5,
-    costPerHeatedTobaccoPack: 18,
     nicotineStrengthMgPerHeatedTobacco: 6,
-    dailyNicotineGoalMg: 30,
-    baselineDailyPouches: 1,
+    nicotineStrengthMgPerPouch: 21,
   },
 };
 

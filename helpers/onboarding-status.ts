@@ -15,6 +15,15 @@ export async function getOnboardingStatus(userId?: string | null): Promise<boole
       return storedValue === 'true';
     }
 
+    if (userId) {
+      const defaultKeyValue = await AsyncStorage.getItem(ONBOARDING_STATUS_KEY);
+      if (defaultKeyValue !== null) {
+        await AsyncStorage.setItem(storageKey, defaultKeyValue);
+        await AsyncStorage.removeItem(ONBOARDING_STATUS_KEY);
+        return defaultKeyValue === 'true';
+      }
+    }
+
     const legacyValue = await AsyncStorage.getItem(LEGACY_ONBOARDING_KEY);
     if (legacyValue !== null) {
       await AsyncStorage.setItem(storageKey, legacyValue);
@@ -34,7 +43,14 @@ export async function setOnboardingStatus(
   userId?: string | null,
 ): Promise<void> {
   try {
-    await AsyncStorage.setItem(getStorageKey(userId), value ? 'true' : 'false');
+    const storageKey = getStorageKey(userId);
+    const serialized = value ? 'true' : 'false';
+
+    await AsyncStorage.setItem(storageKey, serialized);
+
+    if (userId) {
+      await AsyncStorage.setItem(ONBOARDING_STATUS_KEY, serialized);
+    }
   } catch (error) {
     console.warn('Unable to persist onboarding status flag', error);
   }
@@ -42,7 +58,13 @@ export async function setOnboardingStatus(
 
 export async function clearOnboardingStatus(userId?: string | null): Promise<void> {
   try {
-    await AsyncStorage.removeItem(getStorageKey(userId));
+    const storageKey = getStorageKey(userId);
+
+    await AsyncStorage.removeItem(storageKey);
+
+    if (userId) {
+      await AsyncStorage.removeItem(ONBOARDING_STATUS_KEY);
+    }
   } catch (error) {
     console.warn('Unable to clear onboarding status flag', error);
   }

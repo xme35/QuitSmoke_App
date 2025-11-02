@@ -40,21 +40,9 @@ export interface Goal {
 }
 
 export interface UserPreference {
-  defaultConsumptionType: ConsumptionType;
   nicotineStrengthMgPerMl: number; // For vape
   nicotineStrengthMgPerCigarette: number;
   nicotineStrengthMgPerHeatedTobacco: number;
   nicotineStrengthMgPerPouch: number; // Nicotine in a single pouch
-  dailyNicotineGoalMg: number;
-  costPerPack: number;
-  cigarettesPerPack: number;
-  costPerVapePod: number;
   vapePuffsPerPod: number;
-  costPerHeatedTobaccoPack: number;
-  heatedTobaccoSticksPerPack: number;
-  costPerPouch: number;
-  baselineDailyCigarettes: number; // For money saved calculation
-  baselineDailyPuffs: number; // For money saved calculation
-  baselineDailyHeatedTobacco: number;
-  baselineDailyPouches: number;
 }

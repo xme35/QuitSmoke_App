@@ -77,7 +77,7 @@ export default function SourceScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={styles.mainContent}>
-        <ThemedText type="title" style={styles.title}>What are your sources of nicotine?</ThemedText>
+        <ThemedText type="title" style={styles.title}>What are your main sources of nicotine?</ThemedText>
         <ThemedText style={styles.subtitle}>Select all that apply.</ThemedText>
         <View style={styles.optionsContainer}>
           {OPTIONS.map((opt) => (

@@ -6,6 +6,13 @@ import { router } from 'expo-router';
 import { StyleSheet, TouchableOpacity, View, ScrollView } from 'react-native';
 import { useAppContext } from '../../context/AppContext';
 
+const VAPE_PUFFS_PER_DEVICE = 400;
+
+const formatVapeCount = (puffCount: number) => {
+  const vapes = Math.round(puffCount / VAPE_PUFFS_PER_DEVICE);
+  return vapes.toString();
+};
+
 // Reusable component to display each piece of information
 const InfoRow = ({ label, value }: { label: string, value: string | number | string[] | null | undefined }) => {
   if (value === null || value === undefined) return null;
@@ -51,13 +58,13 @@ export default function SummaryScreen() {
                 {appState.sources?.includes('Cigarette') && appState.cigarettes && 
                   <View style={styles.infoRow}>
                     <ThemedText style={styles.infoLabel}>• Cigarette</ThemedText>
-                    <ThemedText style={styles.infoValue}>{`${appState.cigarettes.amount}/day`}</ThemedText>
+                    <ThemedText style={styles.infoValue}>{`${appState.cigarettes.amount} cigs/${appState.cigarettes.frequency}`}</ThemedText>
                   </View>
                 }
                 {appState.sources?.includes('Vape') && appState.vapes &&
                   <View style={styles.infoRow}>
                     <ThemedText style={styles.infoLabel}>• Vape</ThemedText>
-                    <ThemedText style={styles.infoValue}>{`${appState.vapes.puffs} puffs/day`}</ThemedText>
+                    <ThemedText style={styles.infoValue}>{`${formatVapeCount(appState.vapes.puffs)} vapes/${appState.vapes.frequency}`}</ThemedText>
                   </View>
                 }
                 {appState.sources?.includes('Heated Tobacco') && appState.heatedTobacco &&
@@ -69,7 +76,7 @@ export default function SummaryScreen() {
                 {appState.sources?.includes('Nicotine Pouch') && appState.nicotinePouches &&
                   <View style={styles.infoRow}>
                     <ThemedText style={styles.infoLabel}>• Nicotine Pouch</ThemedText>
-                    <ThemedText style={styles.infoValue}>{`${appState.nicotinePouches.pouches}/day`}</ThemedText>
+                    <ThemedText style={styles.infoValue}>{`${appState.nicotinePouches.pouches} pouches/${appState.nicotinePouches.frequency}`}</ThemedText>
                   </View>
                 }
             </View>

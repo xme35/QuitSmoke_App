@@ -2,50 +2,24 @@ import { useMemo } from 'react';
 import { ThemedText } from '../../components/themed-text';
 import { ThemedView } from '../../components/themed-view';
 import { StyleSheet, View, TouchableOpacity, ScrollView } from 'react-native';
-import { useAppContext, TaperingPhase } from '../../context/AppContext';
+import { useAppContext } from '../../context/AppContext';
 import { useRouter } from 'expo-router';
 import { setOnboardingStatus } from '@/helpers/onboarding-status';
 import { Colors } from '../../constants/theme';
-
-type PhaseSummary = {
-  id: number;
-  title: string;
-  role: string;
-  durationLabel: string;
-  startLabel: string;
-  endLabel: string;
-  reductionLabel: string;
-  notes: string | null;
-};
-
-const normalizeTargets = (phase: TaperingPhase): number[] => {
-  if (Array.isArray(phase.dailyTargetsMg) && phase.dailyTargetsMg.length === phase.durationDays) {
-    return phase.dailyTargetsMg.map((value) => Math.max(0, Math.round(value)));
-  }
-  return Array.from({ length: phase.durationDays }, () => Math.max(0, Math.round(phase.nicotineGoalMg)));
-};
-
-const titleize = (value: string | null | undefined): string => {
-  if (!value) return 'Five Phase Structured';
-  return value
-    .split(/[-_]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-};
+import { calculateLifeTimeGained, formatLifeTimeGained } from '../../helpers/calculate-lifetime-gained';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../../firebase/config';
 
 const formatDate = (iso?: string | null) => {
   if (!iso) return 'Today';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return 'Today';
-  return date.toLocaleDateString();
-};
-
-const formatDateTime = (iso?: string | null) => {
-  if (!iso) return 'N/A';
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return 'N/A';
-  return date.toLocaleString();
+  
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  
+  return `${day}/${month}/${year}`;
 };
 
 export default function SuccessScreen() {
@@ -53,78 +27,48 @@ export default function SuccessScreen() {
   const router = useRouter();
 
   const {
+    age,
+    smokingHistory,
+    initialIntake,
     quitDate,
     totalDuration,
     estimatedSavings,
     currencySymbol,
     planCurrency,
-    taperingSchedule,
-    planFramework,
-    planGeneratedAt,
-    planStartDate,
-    initialIntake,
   } = appState;
 
   const planSummary = useMemo(() => {
-    const schedule = Array.isArray(taperingSchedule) ? taperingSchedule : [];
-    const normalized = schedule.map((phase) => ({
-      ...phase,
-      targets: normalizeTargets(phase),
-    }));
-
-    const initialTarget =
-      normalized[0]?.targets[0] ?? Math.max(0, Math.round(initialIntake ?? 0));
-    const lastPhase = normalized.length > 0 ? normalized[normalized.length - 1] : undefined;
-    const finalTargets = lastPhase?.targets ?? [];
-    const finalTarget = finalTargets.length
-      ? finalTargets[finalTargets.length - 1]
-      : lastPhase?.nicotineGoalMg ?? 0;
-
-    let previousEnd = initialTarget;
-    const phases: PhaseSummary[] = normalized.map((phase) => {
-      const targets = phase.targets;
-      const start = targets[0] ?? previousEnd;
-      const end = targets.length ? targets[targets.length - 1] : phase.nicotineGoalMg;
-      const reductionPercent = start > 0 ? ((start - end) / start) * 100 : 0;
-      previousEnd = end;
-
-      return {
-        id: phase.phase,
-        title: `${phase.phase}. ${phase.phaseName}`,
-        role: phase.psychologicalRole,
-        durationLabel: `${phase.durationDays} ${phase.durationDays === 1 ? 'day' : 'days'}`,
-        startLabel: `${Math.round(start).toLocaleString()} mg`,
-        endLabel: `${Math.round(end).toLocaleString()} mg`,
-        reductionLabel: `${Math.max(0, reductionPercent).toFixed(1).replace(/\.0$/, '')}% reduction`,
-        notes: phase.notes ?? null,
-      };
-    });
-
     const currencyPrefix = currencySymbol ?? (planCurrency ? `${planCurrency} ` : '');
     const savingsValue =
       typeof estimatedSavings === 'number' && Number.isFinite(estimatedSavings) ? Math.max(0, estimatedSavings) : 0;
 
+    const quitDateLabel = quitDate ? formatDate(quitDate) : 'On completion of plan';
+
+    // Calculate life time gained
+    // Ensure all values are properly converted to numbers
+    const smokingYears = typeof smokingHistory === 'string'
+      ? parseInt(smokingHistory, 10)
+      : (typeof smokingHistory === 'number' ? smokingHistory : null);
+    
+    const ageValue = typeof age === 'number' ? age : null;
+    const intakeValue = typeof initialIntake === 'number' ? initialIntake : null;
+    
+    const lifeTimeYears = calculateLifeTimeGained(ageValue, smokingYears, intakeValue);
+    const lifeTimeDisplay = formatLifeTimeGained(lifeTimeYears);
+
     return {
-      totalPhases: phases.length,
-      startLabel: `${Math.round(initialTarget).toLocaleString()} mg`,
-      endLabel: `${Math.round(finalTarget).toLocaleString()} mg`,
       savingsDisplay: savingsValue > 0 ? `${currencyPrefix}${savingsValue.toLocaleString()}` : 'N/A',
-      frameworkLabel: titleize(planFramework),
-      generatedLabel: formatDateTime(planGeneratedAt),
-      startDateLabel: formatDate(planStartDate),
-      quitDateLabel: quitDate ? formatDate(quitDate) : 'On completion of Phase 5',
-      phases,
+      quitDateLabel,
+      lifeTimeDisplay,
     };
   }, [
-    taperingSchedule,
+    age,
+    smokingHistory,
+    initialIntake,
     estimatedSavings,
     currencySymbol,
     planCurrency,
-    planFramework,
-    planGeneratedAt,
-    planStartDate,
     quitDate,
-    initialIntake,
   ]);
 
   const handleFinish = async () => {
@@ -133,101 +77,86 @@ export default function SuccessScreen() {
       ...prev,
       isOnboardingComplete: true,
     }));
-    router.replace('/(tabs)/dashboard');
+    
+    // Garantir que o Firestore é atualizado explicitamente
+    if (user) {
+      try {
+        const docRef = doc(db, 'users', user.uid);
+        await setDoc(docRef, { isOnboardingComplete: true }, { merge: true });
+      } catch (error) {
+        console.error('Failed to update onboarding status in Firestore', error);
+      }
+    }
+    
+    router.replace('/(tabs)/dashboard' as any);
   };
 
   return (
     <ThemedView style={styles.container}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        <ThemedText type="title" style={styles.title}>Your Plan is Ready!</ThemedText>
-        <ThemedText style={styles.subtitle}>
-          Here are the highlights of your personalized, five-phase journey to a nicotine-free life.
-        </ThemedText>
-
-        <View style={styles.planContainer}>
-          <View style={styles.planRow}>
-            <View style={styles.metaBlock}>
-              <ThemedText style={styles.metaLabel}>Plan framework</ThemedText>
-              <ThemedText style={styles.metaValue}>{planSummary.frameworkLabel}</ThemedText>
-            </View>
-            <View style={styles.metaBlock}>
-              <ThemedText style={styles.metaLabel}>Generated on</ThemedText>
-              <ThemedText style={styles.metaValue}>{planSummary.generatedLabel}</ThemedText>
-            </View>
+      <ScrollView 
+        style={styles.scrollView} 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Success Header */}
+        <View style={styles.headerSection}>
+          <View style={styles.successIcon}>
+            <ThemedText style={styles.successEmoji}>🎉</ThemedText>
           </View>
+          <ThemedText type="title" style={styles.title}>
+            Congratulations!
+          </ThemedText>
+          <ThemedText type="title" style={styles.subtitle}>
+            Your Plan is Ready
+          </ThemedText>
+          <ThemedText style={styles.description}>
+            You're about to start a life-changing journey to become nicotine-free
+          </ThemedText>
+        </View>
 
-          <View style={styles.planRow}>
-            <View style={styles.metaBlock}>
-              <ThemedText style={styles.metaLabel}>Start date</ThemedText>
-              <ThemedText style={styles.metaValue}>{planSummary.startDateLabel}</ThemedText>
-            </View>
-            <View style={styles.metaBlock}>
-              <ThemedText style={styles.metaLabel}>Target quit date</ThemedText>
-              <ThemedText style={styles.metaValue}>{planSummary.quitDateLabel}</ThemedText>
-            </View>
-          </View>
-
-          <View style={styles.planRow}>
-            <View style={styles.metaBlock}>
-              <ThemedText style={styles.metaLabel}>Total duration</ThemedText>
-              <ThemedText style={styles.metaValue}>
+        {/* Key Metrics Card */}
+        <View style={styles.metricsCard}>
+          <View style={styles.metricRow}>
+            <View style={styles.metricItem}>
+              <ThemedText style={styles.metricLabel}>Total Duration</ThemedText>
+              <ThemedText style={styles.metricValue}>
                 {totalDuration ?? 0} {totalDuration === 1 ? 'day' : 'days'}
               </ThemedText>
             </View>
-            <View style={styles.metaBlock}>
-              <ThemedText style={styles.metaLabel}>Phases</ThemedText>
-              <ThemedText style={styles.metaValue}>{planSummary.totalPhases}</ThemedText>
+            <View style={styles.metricDivider} />
+            <View style={styles.metricItem}>
+              <ThemedText style={styles.metricLabel}>Target Quit Date</ThemedText>
+              <ThemedText style={styles.metricValue}>{planSummary.quitDateLabel}</ThemedText>
             </View>
           </View>
 
-          <View style={styles.progressSummary}>
-            <View style={styles.progressCard}>
-              <ThemedText style={styles.progressLabel}>Starting limit</ThemedText>
-              <ThemedText style={styles.progressValue}>{planSummary.startLabel}</ThemedText>
-            </View>
-            <View style={styles.progressCard}>
-              <ThemedText style={styles.progressLabel}>Final goal</ThemedText>
-              <ThemedText style={styles.progressValue}>{planSummary.endLabel}</ThemedText>
-            </View>
-          </View>
+          <View style={styles.divider} />
 
-          <View style={styles.savingsContainer}>
-            <ThemedText style={styles.savingsLabel}>Estimated Savings</ThemedText>
-            <ThemedText style={styles.savingsValue}>{planSummary.savingsDisplay}</ThemedText>
+          <View style={styles.highlightSection}>
+            <View style={styles.highlightItem}>
+              <ThemedText style={styles.highlightLabel}>💰 Savings</ThemedText>
+              <ThemedText style={styles.highlightValue}>{planSummary.savingsDisplay}</ThemedText>
+              <ThemedText style={styles.highlightNote}>by completing this plan</ThemedText>
+            </View>
+
+            <View style={styles.divider} />
+
+            <View style={styles.highlightItem}>
+              <ThemedText style={styles.highlightLabel}>⏳ Life Time Gained</ThemedText>
+              <ThemedText style={styles.highlightValue}>{planSummary.lifeTimeDisplay}</ThemedText>
+              <ThemedText style={styles.highlightNote}>by completing this plan</ThemedText>
+            </View>
           </View>
         </View>
 
-        <View style={styles.phaseSection}>
-          <ThemedText style={styles.phaseSectionTitle}>Phase Breakdown</ThemedText>
-          {planSummary.phases.length === 0 ? (
-            <ThemedText style={styles.placeholderText}>
-              Phase details will appear once your personalized plan is generated.
-            </ThemedText>
-          ) : (
-            planSummary.phases.map((phase) => (
-              <View key={phase.id} style={styles.phaseCard}>
-                <View style={styles.phaseHeader}>
-                  <ThemedText style={styles.phaseTitle}>{phase.title}</ThemedText>
-                  <ThemedText style={styles.phaseDuration}>{phase.durationLabel}</ThemedText>
-                </View>
-                <ThemedText style={styles.phaseRole}>{phase.role}</ThemedText>
-                <View style={styles.phaseTargets}>
-                  <ThemedText style={styles.targetText}>Start • {phase.startLabel}</ThemedText>
-                  <ThemedText style={styles.targetText}>Goal • {phase.endLabel}</ThemedText>
-                </View>
-                <ThemedText style={styles.reductionBadge}>{phase.reductionLabel}</ThemedText>
-                {phase.notes ? (
-                  <ThemedText style={styles.phaseNotes}>{phase.notes}</ThemedText>
-                ) : null}
-              </View>
-            ))
-          )}
+        {/* Fixed Bottom Button - Moved inside ScrollView */}
+        <View style={styles.buttonContainerInline}>
+          <TouchableOpacity style={styles.button} onPress={handleFinish}>
+            <ThemedText style={styles.buttonText}>Start My Journey</ThemedText>
+          </TouchableOpacity>
         </View>
       </ScrollView>
 
-      <TouchableOpacity style={styles.button} onPress={handleFinish}>
-        <ThemedText style={styles.buttonText}>Start My Journey</ThemedText>
-      </TouchableOpacity>
     </ThemedView>
   );
 }
@@ -235,168 +164,143 @@ export default function SuccessScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 24,
     backgroundColor: Colors.light.background,
-    gap: 24,
   },
   scrollView: {
     flex: 1,
-    width: '100%',
   },
   scrollContent: {
-    paddingBottom: 32,
-    gap: 20,
+    padding: 24,
+    paddingBottom: 24,
+  },
+  headerSection: {
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 32,
+  },
+  successIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  successEmoji: {
+    fontSize: 48,
   },
   title: {
-    marginBottom: 4,
+    fontSize: 32,
+    fontWeight: 'bold',
     textAlign: 'center',
+    marginBottom: 8,
+    color: Colors.light.tint,
   },
   subtitle: {
+    fontSize: 24,
+    fontWeight: '600',
     textAlign: 'center',
-    paddingHorizontal: 16,
-    color: Colors.light.secondaryText,
+    marginBottom: 12,
   },
-  planContainer: {
-    width: '100%',
-    padding: 20,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
+  description: {
+    fontSize: 16,
+    textAlign: 'center',
+    color: Colors.light.secondaryText,
+    paddingHorizontal: 20,
+    lineHeight: 24,
+  },
+  metricsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    marginBottom: 16,
+  },
+  metricRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 16,
   },
-  planRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  metaBlock: {
+  metricItem: {
     flex: 1,
-    gap: 4,
-  },
-  metaLabel: {
-    fontSize: 13,
-    color: '#6B7280',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  metaValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  progressSummary: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  progressCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  progressLabel: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginBottom: 6,
-  },
-  progressValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.light.tint,
-  },
-  savingsContainer: {
-    marginTop: 4,
     alignItems: 'center',
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
   },
-  savingsLabel: {
-    fontSize: 15,
+  metricDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: '#E5E7EB',
+  },
+  metricLabel: {
+    fontSize: 13,
     color: '#6B7280',
-    marginBottom: 6,
+    textAlign: 'center',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  savingsValue: {
-    fontSize: 30,
-    fontWeight: 'bold',
-    color: Colors.light.tint,
-  },
-  phaseSection: {
-    gap: 12,
-  },
-  phaseSectionTitle: {
+  metricValue: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#111827',
-  },
-  placeholderText: {
-    fontSize: 14,
-    color: Colors.light.secondaryText,
-  },
-  phaseCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 16,
-    gap: 10,
-  },
-  phaseHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  phaseTitle: {
-    fontSize: 16,
-    fontWeight: '700',
     color: '#1F2937',
+    textAlign: 'center',
   },
-  phaseDuration: {
-    fontSize: 13,
-    color: Colors.light.secondaryText,
+  divider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 20,
   },
-  phaseRole: {
-    fontSize: 14,
-    color: '#4B5563',
+  highlightSection: {
+    gap: 0,
   },
-  phaseTargets: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
+  highlightItem: {
+    alignItems: 'center',
+    paddingVertical: 8,
   },
-  targetText: {
-    fontSize: 14,
+  highlightLabel: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#111827',
-  },
-  reductionBadge: {
-    alignSelf: 'flex-start',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    backgroundColor: '#EFF6FF',
-    color: Colors.light.tint,
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  phaseNotes: {
-    fontSize: 13,
     color: '#374151',
-    lineHeight: 18,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  highlightValue: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: Colors.light.tint,
+    textAlign: 'center',
+  },
+  highlightNote: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 4,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  buttonContainerInline: {
+    marginTop: 24,
   },
   button: {
     backgroundColor: Colors.light.tint,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    width: '100%',
+    paddingVertical: 18,
+    paddingHorizontal: 32,
+    borderRadius: 16,
     alignItems: 'center',
+    shadowColor: Colors.light.tint,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   buttonText: {
     color: '#FFFFFF',
     fontWeight: 'bold',
-    fontSize: 16,
+    fontSize: 18,
   },
 });

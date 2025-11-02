@@ -153,10 +153,12 @@ export default function ProfileScreen() {
 
     const handleResetPlan = async () => {
         if (newPlanConfirmation.toLowerCase() === 'new plan') {
+            // Reset app state to initial but keep user name
             setAppState(prevState => ({
                 ...initialAppState,
                 name: prevState.name,
             }));
+            // Clear onboarding status to show onboarding flow again
             await setOnboardingStatus(false, user?.uid);
             setNewPlanModalVisible(false);
             setNewPlanConfirmation('');

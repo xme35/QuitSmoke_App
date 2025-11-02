@@ -35,7 +35,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="dashboard"
         options={{
-          title: 'Dashboard',
+          title: 'Daily Nicotine Intake',
         }}
       />
       <Tabs.Screen
