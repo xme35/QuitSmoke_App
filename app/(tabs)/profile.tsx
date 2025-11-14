@@ -82,7 +82,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ visible, onclose,
                 <ThemedView style={[styles.modalView, { backgroundColor: themeColors.background }]}>
                     <ThemedText style={styles.modalTitle}>{title}</ThemedText>
                     <ThemedText style={styles.modalText}>
-                        This action is irreversible. To confirm, please type '{challengeText}' in the box below.
+                        {`This action is irreversible. To confirm, please type \u201c${challengeText}\u201d in the box below.`}
                     </ThemedText>
                     <TextInput
                         style={[styles.input, { borderColor: themeColors.secondaryText, color: themeColors.text }]}
@@ -93,7 +93,12 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ visible, onclose,
                         autoCapitalize="none"
                     />
                     <TouchableOpacity
-                        style={[styles.button, confirmation.toLowerCase() !== challengeText ? { backgroundColor: themeColors.secondaryText } : { backgroundColor: themeColors.error }]}
+                        style={[
+                            styles.button,
+                            confirmation.toLowerCase() !== challengeText
+                                ? { backgroundColor: themeColors.secondaryText }
+                                : { backgroundColor: themeColors.error },
+                        ]}
                         onPress={onconfirm}
                         disabled={confirmation.toLowerCase() !== challengeText}
                     >
@@ -141,10 +146,8 @@ export default function ProfileScreen() {
         try {
             setAppState(initialAppState);
             await clearLoginStatus();
-            await clearOnboardingStatus(user?.uid);
             await signOut(auth);
             router.replace('/(auth)/sign-in' as any);
-            Alert.alert('Logged Out', 'You have been successfully logged out.');
         } catch (error) {
             console.error("Error signing out: ", error);
             Alert.alert('Error', 'Could not log out. Please try again.');
@@ -164,7 +167,7 @@ export default function ProfileScreen() {
             setNewPlanConfirmation('');
             router.replace('/(onboarding)/welcome' as any);
         } else {
-            Alert.alert('Incorrect Confirmation', 'Please type "new plan" to confirm.');
+            Alert.alert('Incorrect Confirmation', 'Please type \u201cnew plan\u201d to confirm.');
         }
     };
 
@@ -184,7 +187,7 @@ export default function ProfileScreen() {
                 Alert.alert('Error', 'Could not delete your account. Please try again.');
             }
         } else {
-            Alert.alert('Incorrect Confirmation', 'Please type "delete" to confirm.');
+            Alert.alert('Incorrect Confirmation', 'Please type \u201cdelete\u201d to confirm.');
         }
     };
 

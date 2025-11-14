@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '@/firebase/config';
+import { clearLoginStatus, setLoginStatus } from '@/helpers/login-status';
 
 interface AuthContextType {
   user: User | null;
@@ -17,9 +18,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthReady, setIsAuthReady] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
+    const handleAuthChange = async (currentUser: User | null) => {
+      setUser(currentUser);
       setIsAuthReady(true); // Só marca como pronto DEPOIS do Firebase responder
+
+      try {
+        if (currentUser) {
+          await setLoginStatus(true);
+        } else {
+          await clearLoginStatus();
+        }
+      } catch (error) {
+        console.warn('Failed to persist login flag', error);
+      }
+    };
+
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      void handleAuthChange(currentUser);
     });
 
     return unsubscribe;

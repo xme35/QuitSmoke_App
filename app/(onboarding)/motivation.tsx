@@ -50,7 +50,7 @@ export default function MotivationScreen() {
     <ThemedView style={styles.container}>
       <View style={styles.mainContent}>
         <ThemedText type="title" style={styles.title}>
-          What's your main reason for quitting?
+          {`What\u2019s your main reason for quitting?`}
         </ThemedText>
         <ThemedText style={styles.subtitle}>Select all that apply.</ThemedText>
 

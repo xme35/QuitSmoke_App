@@ -326,16 +326,6 @@ const ProductDetailsScreen = () => {
     }
   };
 
-  const incrementValue = (product: ProductKey, field: string, currentValue: number, maxValue: number, step: number = 1) => {
-    const newValue = Math.min(currentValue + step, maxValue);
-    handleProductChange(product, field as any, newValue);
-  };
-
-  const decrementValue = (product: ProductKey, field: string, currentValue: number, step: number = 1) => {
-    const newValue = Math.max(currentValue - step, 0);
-    handleProductChange(product, field as any, newValue);
-  };
-
   return (
     <ThemedView style={styles.container}>
         <View style={styles.mainContent}>

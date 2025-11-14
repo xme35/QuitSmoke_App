@@ -4,7 +4,7 @@ import { ThemedView } from '../../components/themed-view';
 import { Colors } from '../../constants/theme';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, TouchableOpacity, View, Platform } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { AppState, useAppContext } from '../../context/AppContext';
 

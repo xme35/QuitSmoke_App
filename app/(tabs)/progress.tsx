@@ -1,19 +1,19 @@
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { ThemedText } from '../../components/themed-text';
 import { ThemedView } from '../../components/themed-view';
-import { StyleSheet, useColorScheme, View, Dimensions, ScrollView, TouchableOpacity } from 'react-native';
+import { StyleSheet, useColorScheme, View, Dimensions, ScrollView, Animated, Pressable } from 'react-native';
 import { useAppContext, TaperingPhase } from '../../context/AppContext';
 import { Colors } from '../../constants/theme';
 import { FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
-import { differenceInDays, add, format, eachDayOfInterval, startOfDay, subDays, startOfWeek, endOfWeek, isSameDay, parseISO } from 'date-fns';
-import Svg, { Line, G, Circle, Text as SvgText, Rect, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
+import { differenceInDays, add, format, eachDayOfInterval, startOfDay, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
+import Svg, { G, Text as SvgText, Rect } from 'react-native-svg';
 import { calculateLifeTimeGained, formatLifeTimeGained } from '../../helpers/calculate-lifetime-gained';
-import { ProgressBar } from '../../components/progressBar';
+import { HealthImprovements } from '../../components/HealthImprovements';
+import { AchievementBadges, TOTAL_BADGES } from '../../components/AchievementBadges';
 
 const screenWidth = Dimensions.get('window').width;
 const chartWidth = screenWidth - 48;
-const chartHeight = 200;
 
 const normalizeDailyAmount = (value?: number, frequency?: string | null) => {
     if (!Number.isFinite(value) || value == null || value <= 0) return 0;
@@ -32,6 +32,12 @@ export default function ProgressScreen() {
     const colorScheme = useColorScheme() ?? 'light';
     const themeColors = Colors[colorScheme];
     const [now, setNow] = useState(new Date());
+    const scaleAnim = useMemo(() => new Animated.Value(1), []);
+    const [healthModalVisible, setHealthModalVisible] = useState(false);
+    const [badgesModalVisible, setBadgesModalVisible] = useState(false);
+    const [streakPage, setStreakPage] = useState(0);
+    const streakScrollRef = useRef<ScrollView>(null);
+    const [chartView, setChartView] = useState<'week' | 'month'>('week');
 
     useEffect(() => {
         const timer = setInterval(() => {
@@ -98,6 +104,22 @@ export default function ProgressScreen() {
         return differenceInDays(new Date(), new Date(planStartDate));
     }, [planStartDate]);
 
+    // Streak animation
+    useEffect(() => {
+        Animated.sequence([
+            Animated.timing(scaleAnim, {
+                toValue: 1.1,
+                duration: 300,
+                useNativeDriver: true,
+            }),
+            Animated.timing(scaleAnim, {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: true,
+            }),
+        ]).start();
+    }, [daysSinceStart, scaleAnim]);
+
     const moneySaved = useMemo(() => {
         if (!estimatedSavings || !totalDuration || daysSinceStart < 0) return '€0';
         const dailySavings = estimatedSavings / totalDuration;
@@ -106,10 +128,43 @@ export default function ProgressScreen() {
     }, [estimatedSavings, totalDuration, daysSinceStart]);
 
     const lifeTimeGained = useMemo(() => {
+        if (!totalDuration || daysSinceStart < 0) return 'N/A';
+        
         const smokingYears = appState.smokingHistory ? parseInt(appState.smokingHistory.split(' ')[0]) : 0;
-        const years = calculateLifeTimeGained(appState.age, smokingYears, appState.initialIntake);
-        return formatLifeTimeGained(years);
-    }, [appState.age, appState.smokingHistory, appState.initialIntake]);
+        const totalYearsGainable = calculateLifeTimeGained(appState.age, smokingYears, appState.initialIntake);
+        
+        // Calcular proporcionalmente ao progresso (similar ao money saved)
+        const dailyLifeTimeGain = totalYearsGainable / totalDuration;
+        const lifeTimeGainedSoFar = dailyLifeTimeGain * daysSinceStart;
+        
+        return formatLifeTimeGained(lifeTimeGainedSoFar);
+    }, [appState.age, appState.smokingHistory, appState.initialIntake, totalDuration, daysSinceStart]);
+
+    // Helper function to calculate precise nicotine from logs
+    const calculateNicotineFromLogs = (logs: any[]) => {
+        let totalNicotine = 0;
+        logs.forEach(log => {
+            switch (log.product) {
+                case 'Cigarette':
+                    totalNicotine += appState.preferences?.nicotineStrengthMgPerCigarette || 12;
+                    break;
+                case 'Vape (Puff)': {
+                    const nicotinePerMl = appState.preferences?.nicotineStrengthMgPerMl || 3;
+                    const puffsPerPod = appState.preferences?.vapePuffsPerPod || 500;
+                    const vapeNicotinePerPuff = puffsPerPod > 0 ? (nicotinePerMl * 2) / puffsPerPod : 0;
+                    totalNicotine += vapeNicotinePerPuff;
+                    break;
+                }
+                case 'Heated Tobacco':
+                    totalNicotine += appState.preferences?.nicotineStrengthMgPerHeatedTobacco || 6;
+                    break;
+                case 'Nicotine Pouch':
+                    totalNicotine += appState.preferences?.nicotineStrengthMgPerPouch || 21;
+                    break;
+            }
+        });
+        return totalNicotine;
+    };
 
     const daysWithinLimits = useMemo(() => {
         if (!consumptionLog || !planStartDate || !appState.taperingSchedule) return 0;
@@ -147,8 +202,8 @@ export default function ProgressScreen() {
                 return format(new Date(log.timestamp), 'yyyy-MM-dd') === dayStr;
             });
             
-            // Estimate nicotine intake for the day based on event count and calibrated baseline
-            const estimatedNicotine = dayConsumption.length * nicotinePerEvent;
+            // Calculate precise nicotine intake for the day
+            const estimatedNicotine = calculateNicotineFromLogs(dayConsumption);
             
             if (estimatedNicotine <= dailyTarget) {
                 withinLimitsCount++;
@@ -156,224 +211,483 @@ export default function ProgressScreen() {
         });
         
         return withinLimitsCount;
-    }, [consumptionLog, planStartDate, appState.taperingSchedule, nicotinePerEvent]);
+    }, [consumptionLog, planStartDate, appState.taperingSchedule, appState.preferences]);
+
+    // Calculate current streak (consecutive days within limits)
+    const currentStreak = useMemo(() => {
+        if (!consumptionLog || !planStartDate || !appState.taperingSchedule) return 0;
+        
+        const today = startOfDay(new Date());
+        const start = startOfDay(new Date(planStartDate));
+        let streak = 0;
+        
+        // Count backwards from today to find consecutive days within limits
+        for (let i = 0; i >= -daysSinceStart; i--) {
+            const day = add(today, { days: i });
+            const dayStr = format(day, 'yyyy-MM-dd');
+            const daysSinceStartForDay = differenceInDays(day, start);
+            
+            // Find the current phase for this day
+            let currentPhase: TaperingPhase | null = null;
+            let cumulativeDays = 0;
+            for (const phase of appState.taperingSchedule!) {
+                if (daysSinceStartForDay < cumulativeDays + phase.durationDays) {
+                    currentPhase = phase;
+                    break;
+                }
+                cumulativeDays += phase.durationDays;
+            }
+            
+            if (!currentPhase) break;
+            
+            const dayInPhase = daysSinceStartForDay - cumulativeDays;
+            const dailyTarget =
+                currentPhase.dailyTargetsMg?.[dayInPhase] ?? currentPhase.nicotineGoalMg ?? 0;
+            
+            // Count consumption for this day
+            const dayConsumption = consumptionLog.filter(log => {
+                return format(new Date(log.timestamp), 'yyyy-MM-dd') === dayStr;
+            });
+            
+            // Calculate precise nicotine intake for the day
+            const estimatedNicotine = calculateNicotineFromLogs(dayConsumption);
+            
+            if (estimatedNicotine <= dailyTarget) {
+                streak++;
+            } else {
+                break; // Streak is broken
+            }
+        }
+        
+        return streak;
+    }, [consumptionLog, planStartDate, appState.taperingSchedule, appState.preferences, daysSinceStart]);
+
+    // Calculate longest streak (best consecutive streak in history)
+    const longestStreak = useMemo(() => {
+        if (!consumptionLog || !planStartDate || !appState.taperingSchedule) return 0;
+        
+        const today = startOfDay(new Date());
+        const start = startOfDay(new Date(planStartDate));
+        const allDays = eachDayOfInterval({ start, end: today });
+        
+        let maxStreak = 0;
+        let currentStreakCount = 0;
+        
+        allDays.forEach((day) => {
+            const dayStr = format(day, 'yyyy-MM-dd');
+            const daysSinceStartForDay = differenceInDays(day, start);
+            
+            // Find the current phase for this day
+            let currentPhase: TaperingPhase | null = null;
+            let cumulativeDays = 0;
+            for (const phase of appState.taperingSchedule!) {
+                if (daysSinceStartForDay < cumulativeDays + phase.durationDays) {
+                    currentPhase = phase;
+                    break;
+                }
+                cumulativeDays += phase.durationDays;
+            }
+            
+            if (!currentPhase) return;
+            
+            const dayInPhase = daysSinceStartForDay - cumulativeDays;
+            const dailyTarget =
+                currentPhase.dailyTargetsMg?.[dayInPhase] ?? currentPhase.nicotineGoalMg ?? 0;
+            
+            // Count consumption for this day
+            const dayConsumption = consumptionLog.filter(log => {
+                return format(new Date(log.timestamp), 'yyyy-MM-dd') === dayStr;
+            });
+            
+            // Calculate precise nicotine intake for the day
+            const estimatedNicotine = calculateNicotineFromLogs(dayConsumption);
+            
+            if (estimatedNicotine <= dailyTarget) {
+                currentStreakCount++;
+                maxStreak = Math.max(maxStreak, currentStreakCount);
+            } else {
+                currentStreakCount = 0;
+            }
+        });
+        
+        return maxStreak;
+    }, [consumptionLog, planStartDate, appState.taperingSchedule, appState.preferences]);
+
+    // Calculate smoking-off days (total days with 0 consumption)
+    const smokeFreeDays = useMemo(() => {
+        if (!consumptionLog || !planStartDate) return 0;
+        
+        let smokeFreeCount = 0;
+        const today = startOfDay(new Date());
+        const start = startOfDay(new Date(planStartDate));
+        
+        const allDays = eachDayOfInterval({ start, end: today });
+        
+        allDays.forEach((day) => {
+            const dayStr = format(day, 'yyyy-MM-dd');
+            const dayConsumption = consumptionLog.filter(log => {
+                return format(new Date(log.timestamp), 'yyyy-MM-dd') === dayStr;
+            });
+            
+            if (dayConsumption.length === 0) {
+                smokeFreeCount++;
+            }
+        });
+        
+        return smokeFreeCount;
+    }, [consumptionLog, planStartDate]);
+
+    // Calculate current smoking-off streak (consecutive days with 0 consumption)
+    const currentSmokeFreeStreak = useMemo(() => {
+        if (!consumptionLog || !planStartDate) return 0;
+        
+        const today = startOfDay(new Date());
+        let streak = 0;
+        
+        for (let i = 0; i >= -daysSinceStart; i--) {
+            const day = add(today, { days: i });
+            const dayStr = format(day, 'yyyy-MM-dd');
+            
+            const dayConsumption = consumptionLog.filter(log => {
+                return format(new Date(log.timestamp), 'yyyy-MM-dd') === dayStr;
+            });
+            
+            if (dayConsumption.length === 0) {
+                streak++;
+            } else {
+                break;
+            }
+        }
+        
+        return streak;
+    }, [consumptionLog, planStartDate, daysSinceStart]);
+
+    // Calculate longest smoking-off streak
+    const longestSmokeFreeStreak = useMemo(() => {
+        if (!consumptionLog || !planStartDate) return 0;
+        
+        const today = startOfDay(new Date());
+        const start = startOfDay(new Date(planStartDate));
+        const allDays = eachDayOfInterval({ start, end: today });
+        
+        let maxStreak = 0;
+        let currentStreakCount = 0;
+        
+        allDays.forEach((day) => {
+            const dayStr = format(day, 'yyyy-MM-dd');
+            const dayConsumption = consumptionLog.filter(log => {
+                return format(new Date(log.timestamp), 'yyyy-MM-dd') === dayStr;
+            });
+            
+            if (dayConsumption.length === 0) {
+                currentStreakCount++;
+                maxStreak = Math.max(maxStreak, currentStreakCount);
+            } else {
+                currentStreakCount = 0;
+            }
+        });
+        
+        return maxStreak;
+    }, [consumptionLog, planStartDate]);
+
+    // Calculate health improvements completed (20 total health metrics)
+    const healthImprovementsCompleted = useMemo(() => {
+        const completionThresholds = [
+            0.014, 0.5, 0.5, 1, 2, 3, 7, 7, 14, 14, 14, 14, 30, 30, 30, 90, 90, 90, 90, 90, 365, 3650
+        ];
+        return completionThresholds.filter(days => daysSinceStart >= days).length;
+    }, [daysSinceStart]);
+
+    // Calculate badge stats
+    const badgeStats = useMemo(() => {
+        const savedAmount = parseFloat(moneySaved.replace('€', ''));
+        return {
+            daysSinceStart,
+            daysWithinLimits,
+            moneySaved: savedAmount,
+            healthMilestonesUnlocked: healthImprovementsCompleted,
+            perfectDays: daysWithinLimits,
+            longestStreak: daysSinceStart,
+        };
+    }, [daysSinceStart, daysWithinLimits, moneySaved, healthImprovementsCompleted]);
+
+    // Calculate unlocked badges count - comprehensive count of ALL possible badges
+    const unlockedBadgesCount = useMemo(() => {
+        let count = 0;
+        
+        // Time-based badges - Days (1-6, 50, 100, 150, 200)
+        if (daysSinceStart >= 1) count++;
+        if (daysSinceStart >= 2) count++;
+        if (daysSinceStart >= 3) count++;
+        if (daysSinceStart >= 4) count++;
+        if (daysSinceStart >= 5) count++;
+        if (daysSinceStart >= 6) count++;
+        if (daysSinceStart >= 50) count++;
+        if (daysSinceStart >= 100) count++;
+        if (daysSinceStart >= 150) count++;
+        if (daysSinceStart >= 200) count++;
+        
+        // Time-based badges - Weeks (1-4)
+        if (daysSinceStart >= 7) count++;
+        if (daysSinceStart >= 14) count++;
+        if (daysSinceStart >= 21) count++;
+        if (daysSinceStart >= 28) count++;
+        
+        // Time-based badges - Months (1-11)
+        if (daysSinceStart >= 30) count++;
+        if (daysSinceStart >= 60) count++;
+        if (daysSinceStart >= 90) count++;
+        if (daysSinceStart >= 120) count++;
+        if (daysSinceStart >= 150) count++;
+        if (daysSinceStart >= 180) count++;
+        if (daysSinceStart >= 210) count++;
+        if (daysSinceStart >= 240) count++;
+        if (daysSinceStart >= 270) count++;
+        if (daysSinceStart >= 300) count++;
+        if (daysSinceStart >= 330) count++;
+        
+        // Time-based badges - Years
+        if (daysSinceStart >= 365) count++;
+        
+        // Health improvement badges (22 total)
+        if (daysSinceStart >= 0.014) count++; // Pulse Rate
+        if (daysSinceStart >= 0.5) count += 2; // Oxygen & CO
+        if (daysSinceStart >= 1) count++; // Heart Attack Risk
+        if (daysSinceStart >= 2) count++; // Taste & Smell
+        if (daysSinceStart >= 3) count++; // Bad Breath
+        if (daysSinceStart >= 7) count += 2; // Sleep Quality & Tooth Staining
+        if (daysSinceStart >= 14) count += 4; // Circulation, Gum Texture, Energy, Concentration
+        if (daysSinceStart >= 30) count += 3; // Gums & Teeth, Immunity, Mood
+        if (daysSinceStart >= 90) count += 5; // Breathing, Lung Function, Physical Fitness, Skin, Fertility
+        if (daysSinceStart >= 365) count++; // Heart Disease Risk
+        if (daysSinceStart >= 3650) count++; // Lung Cancer Risk
+        
+        // Money-based badges
+        const savedAmount = parseFloat(moneySaved.replace('€', ''));
+        if (savedAmount >= 50) count++;
+        if (savedAmount >= 100) count++;
+        if (savedAmount >= 250) count++;
+        if (savedAmount >= 1000) count++;
+        if (savedAmount >= 10000) count++;
+        
+        return count;
+    }, [daysSinceStart, moneySaved]);
 
     const planProgress = useMemo(() => {
         if (!totalDuration || daysSinceStart < 0) return 0;
         return Math.min((daysSinceStart / totalDuration) * 100, 100);
     }, [totalDuration, daysSinceStart]);
 
-    // Weekly consumption data
+    // Weekly consumption data - daily breakdown for current week
     const weeklyData = useMemo(() => {
-        if (!consumptionLog || !planStartDate) return [];
-        
-        const weeks = [];
-        const today = new Date();
-        const start = new Date(planStartDate);
-        
-        // Get last 4 weeks
-        for (let i = 3; i >= 0; i--) {
-            const weekStart = startOfWeek(subDays(today, i * 7), { weekStartsOn: 1 });
-            const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
-            
-            const weekLogs = consumptionLog.filter(log => {
-                const logDate = new Date(log.timestamp);
-                return logDate >= weekStart && logDate <= weekEnd;
-            });
-            
-            weeks.push({
-                week: format(weekStart, 'MMM d'),
-                count: weekLogs.length,
-                weekStart,
-            });
-        }
-        
-        return weeks;
-    }, [consumptionLog, planStartDate]);
-
-    // Daily consumption trend data (last 30 days)
-    const trendData = useMemo(() => {
-        if (!consumptionLog || !planStartDate || !appState.taperingSchedule) return [];
+        if (!consumptionLog || !appState.taperingSchedule) return [];
         
         const days = [];
         const today = new Date();
-        const daysToShow = 30;
-        const eventsNicotineValue = nicotinePerEvent > 0 ? nicotinePerEvent : 1;
+        const weekStart = startOfWeek(today, { weekStartsOn: 1 });
+        const start = startOfDay(new Date(planStartDate || new Date()));
         
-        for (let i = daysToShow - 1; i >= 0; i--) {
-            const day = subDays(today, i);
+        // Get each day of the current week
+        for (let i = 0; i < 7; i++) {
+            const day = add(weekStart, { days: i });
             const dayStr = format(day, 'yyyy-MM-dd');
-            const daysSinceStartVal = differenceInDays(day, new Date(planStartDate));
+            const daysSinceStartForDay = differenceInDays(day, start);
             
-            // Find target for this day
-            let targetMg = 0;
+            const dayLogs = consumptionLog.filter(log =>
+                format(new Date(log.timestamp), 'yyyy-MM-dd') === dayStr
+            );
+            
+            // Calculate precise nicotine intake for the day
+            const estimatedNicotine = calculateNicotineFromLogs(dayLogs);
+            
+            // Find the daily target for this day
+            let dailyTarget = 0;
             let cumulativeDays = 0;
             for (const phase of appState.taperingSchedule) {
-                if (daysSinceStartVal < cumulativeDays + phase.durationDays) {
-                    const dayInPhase = daysSinceStartVal - cumulativeDays;
-                    targetMg =
-                        phase.dailyTargetsMg?.[dayInPhase] ?? phase.nicotineGoalMg ?? 0;
+                if (daysSinceStartForDay < cumulativeDays + phase.durationDays) {
+                    const dayInPhase = daysSinceStartForDay - cumulativeDays;
+                    dailyTarget = phase.dailyTargetsMg?.[dayInPhase] ?? phase.nicotineGoalMg ?? 0;
                     break;
                 }
                 cumulativeDays += phase.durationDays;
             }
             
-            const dayLogs = consumptionLog.filter(log =>
-                format(new Date(log.timestamp), 'yyyy-MM-dd') === dayStr
-            );
-            
-            const rawTargetEvents = Math.round(targetMg / eventsNicotineValue);
-            const targetEvents =
-                rawTargetEvents <= 0 && targetMg > 0 ? 1 : Math.max(0, rawTargetEvents);
+            const isWithinLimits = estimatedNicotine <= dailyTarget;
             
             days.push({
-                date: day,
-                actual: dayLogs.length,
-                target: targetEvents,
-                dateStr: format(day, 'MMM d'),
+                day: format(day, 'EEE'),
+                date: format(day, 'd'),
+                count: dayLogs.length,
+                nicotine: Math.round(estimatedNicotine),
+                target: dailyTarget,
+                isWithinLimits,
             });
         }
         
         return days;
-    }, [consumptionLog, planStartDate, appState.taperingSchedule, nicotinePerEvent]);
+    }, [consumptionLog, appState.taperingSchedule, appState.preferences, planStartDate]);
 
-    // Calendar heatmap data (last 28 days)
-    const calendarData = useMemo(() => {
-        if (!consumptionLog || !planStartDate) return [];
+    // Monthly consumption data - daily breakdown for current month
+    const monthlyData = useMemo(() => {
+        if (!consumptionLog || !appState.taperingSchedule) return [];
         
-        const days = [];
+        const days: Array<{
+            day: string;
+            date: string;
+            count: number;
+            nicotine: number;
+            target: number;
+            isWithinLimits: boolean;
+        }> = [];
         const today = new Date();
+        const monthStart = startOfMonth(today);
+        const monthEnd = endOfMonth(today);
+        const start = startOfDay(new Date(planStartDate || new Date()));
         
-        for (let i = 27; i >= 0; i--) {
-            const day = subDays(today, i);
+        // Get each day of the current month
+        const monthDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
+        
+        monthDays.forEach((day) => {
             const dayStr = format(day, 'yyyy-MM-dd');
+            const daysSinceStartForDay = differenceInDays(day, start);
             
             const dayLogs = consumptionLog.filter(log =>
                 format(new Date(log.timestamp), 'yyyy-MM-dd') === dayStr
             );
             
-            // Calculate intensity (0-4)
-            const count = dayLogs.length;
-            let intensity = 0;
-            if (count === 0) intensity = 4; // Perfect day
-            else if (count <= 3) intensity = 3; // Good
-            else if (count <= 5) intensity = 2; // Okay
-            else if (count <= 8) intensity = 1; // Struggling
+            // Calculate precise nicotine intake for the day
+            const estimatedNicotine = calculateNicotineFromLogs(dayLogs);
+            
+            // Find the daily target for this day
+            let dailyTarget = 0;
+            let cumulativeDays = 0;
+            if (appState.taperingSchedule) {
+                for (const phase of appState.taperingSchedule) {
+                    if (daysSinceStartForDay < cumulativeDays + phase.durationDays) {
+                        const dayInPhase = daysSinceStartForDay - cumulativeDays;
+                        dailyTarget = phase.dailyTargetsMg?.[dayInPhase] ?? phase.nicotineGoalMg ?? 0;
+                        break;
+                    }
+                    cumulativeDays += phase.durationDays;
+                }
+            }
+            
+            const isWithinLimits = estimatedNicotine <= dailyTarget;
             
             days.push({
-                date: day,
-                intensity,
-                count,
+                day: format(day, 'EEE'),
+                date: format(day, 'd'),
+                count: dayLogs.length,
+                nicotine: Math.round(estimatedNicotine),
+                target: dailyTarget,
+                isWithinLimits,
             });
-        }
+        });
         
         return days;
-    }, [consumptionLog, planStartDate]);
+    }, [consumptionLog, appState.taperingSchedule, appState.preferences, planStartDate]);
 
-    // Health milestones
-    const healthMilestones = useMemo(() => {
-        const hours = daysSinceStart * 24;
-        
-        return [
-            { time: '20 minutes', achieved: hours >= 0.33, icon: 'heartbeat', label: 'Heart rate normalizes' },
-            { time: '12 hours', achieved: hours >= 12, icon: 'lungs', label: 'CO levels drop' },
-            { time: '2 weeks', achieved: daysSinceStart >= 14, icon: 'running', label: 'Circulation improves' },
-            { time: '1 month', achieved: daysSinceStart >= 30, icon: 'shield-alt', label: 'Immune system boost' },
-            { time: '3 months', achieved: daysSinceStart >= 90, icon: 'star', label: 'Major health gains' },
-        ];
-    }, [daysSinceStart]);
 
     const achievements = [
         {
             label: 'Money Saved',
             value: moneySaved,
             iconName: 'wallet',
-            gradient: ['#10b981', '#059669']
+            gradient: ['#0e7490', '#0c5a6e']
         },
         {
             label: 'Life Time Gained',
             value: lifeTimeGained,
             iconName: 'heartbeat',
-            gradient: ['#ef4444', '#dc2626']
-        },
-        {
-            label: 'Smoke-Free Days',
-            value: String(daysSinceStart),
-            iconName: 'calendar-check',
-            gradient: ['#3b82f6', '#2563eb']
-        },
-        {
-            label: 'Days Within Limits',
-            value: String(daysWithinLimits),
-            iconName: 'check-circle',
-            gradient: ['#8b5cf6', '#7c3aed']
+            gradient: ['#b91c1c', '#991b1b']
         },
     ];
 
-    const AchievementCard = ({ label, value, iconName, gradient }: {
+    const AchievementCard = ({ label, value, iconName, gradient, onPress }: {
         label: string;
         value: string;
         iconName: any;
         gradient: string[];
+        onPress?: () => void;
     }) => {
         const isDark = colorScheme === 'dark';
         return (
-            <View style={[
-                styles.card,
-                {
-                    backgroundColor: isDark ? '#1C1F20' : '#FFFFFF',
-                    borderLeftWidth: 4,
-                    borderLeftColor: gradient[0]
-                }
-            ]}>
-                <View style={[styles.iconContainer, { backgroundColor: `${gradient[0]}15` }]}>
-                    <FontAwesome5 name={iconName} size={28} color={gradient[0]} />
-                </View>
-                <ThemedText style={styles.cardValue}>{value}</ThemedText>
-                <ThemedText style={[styles.cardLabel, { color: isDark ? '#9CA3AF' : '#6B7280' }]}>
-                    {label}
-                </ThemedText>
-            </View>
+            <Pressable onPress={onPress} disabled={!onPress} style={{ width: '48%' }}>
+                <Animated.View style={[
+                    styles.card,
+                    {
+                        backgroundColor: isDark ? '#1C1F20' : '#FFFFFF',
+                        transform: [{ scale: scaleAnim }],
+                        width: '100%',
+                    }
+                ]}>
+                    <View style={[styles.iconContainer, { backgroundColor: `${gradient[0]}20` }]}>
+                        <FontAwesome5 name={iconName} size={24} color={gradient[0]} />
+                    </View>
+                    <ThemedText style={[styles.cardValue, { color: gradient[0] }]} numberOfLines={1}>{value}</ThemedText>
+                    <ThemedText style={[styles.cardLabel, { color: isDark ? '#9CA3AF' : '#6B7280' }]} numberOfLines={2}>
+                        {label}
+                    </ThemedText>
+                    {onPress && (
+                        <View style={styles.cardTapHint}>
+                            <MaterialCommunityIcons
+                                name="chevron-right"
+                                size={14}
+                                color={gradient[0]}
+                            />
+                        </View>
+                    )}
+                </Animated.View>
+            </Pressable>
         );
     };
 
     return (
-        <ThemedView style={{flex: 1}}>
+        <ThemedView style={{flex: 1, backgroundColor: themeColors.background}}>
             <ScrollView
                 style={styles.container}
                 showsVerticalScrollIndicator={false}
             >
                 {/* Hero Section with Countdown */}
-                <View style={styles.heroSection}>
-                    <View style={styles.headerContainer}>
-                        <MaterialCommunityIcons name="trophy-variant" size={28} color={themeColors.tint} />
-                        <View style={{ flex: 1 }}>
-                            <ThemedText style={styles.freedomTitle}>Your Journey to Freedom</ThemedText>
-                        </View>
-                    </View>
-                    
+                <View style={[styles.heroSection, { backgroundColor: themeColors.background }]}>
                     {/* Countdown Cards Grid */}
                     <View style={styles.countdownGrid}>
-                        <View style={[styles.countdownCard, { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }]}>
-                            <ThemedText style={[styles.countdownCardValue, { color: themeColors.tint }]}>
+                        <View style={[styles.countdownCard, {
+                            backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF',
+                            borderTopWidth: 3,
+                            borderTopColor: '#0a7ea4'
+                        }]}>
+                            <ThemedText style={[styles.countdownCardValue, { color: '#0a7ea4' }]}>
                                 {String(timeUntilPlanEnds.days).padStart(2, '0')}
                             </ThemedText>
                             <ThemedText style={styles.countdownCardLabel}>Days</ThemedText>
                         </View>
-                        <View style={[styles.countdownCard, { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }]}>
-                            <ThemedText style={[styles.countdownCardValue, { color: themeColors.tint }]}>
+                        <View style={[styles.countdownCard, {
+                            backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF',
+                            borderTopWidth: 3,
+                            borderTopColor: '#0a7ea4'
+                        }]}>
+                            <ThemedText style={[styles.countdownCardValue, { color: '#0a7ea4' }]}>
                                 {String(timeUntilPlanEnds.hours).padStart(2, '0')}
                             </ThemedText>
                             <ThemedText style={styles.countdownCardLabel}>Hours</ThemedText>
                         </View>
-                        <View style={[styles.countdownCard, { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }]}>
-                            <ThemedText style={[styles.countdownCardValue, { color: themeColors.tint }]}>
+                        <View style={[styles.countdownCard, {
+                            backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF',
+                            borderTopWidth: 3,
+                            borderTopColor: '#0a7ea4'
+                        }]}>
+                            <ThemedText style={[styles.countdownCardValue, { color: '#0a7ea4' }]}>
                                 {String(timeUntilPlanEnds.minutes).padStart(2, '0')}
                             </ThemedText>
                             <ThemedText style={styles.countdownCardLabel}>Mins</ThemedText>
                         </View>
-                        <View style={[styles.countdownCard, { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }]}>
-                            <ThemedText style={[styles.countdownCardValue, { color: themeColors.tint }]}>
+                        <View style={[styles.countdownCard, {
+                            backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF',
+                            borderTopWidth: 3,
+                            borderTopColor: '#0a7ea4'
+                        }]}>
+                            <ThemedText style={[styles.countdownCardValue, { color: '#0a7ea4' }]}>
                                 {String(timeUntilPlanEnds.seconds).padStart(2, '0')}
                             </ThemedText>
                             <ThemedText style={styles.countdownCardLabel}>Secs</ThemedText>
@@ -383,13 +697,16 @@ export default function ProgressScreen() {
                     {/* Progress Card */}
                     <View style={[styles.progressCard, { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }]}>
                         <View style={styles.progressCardHeader}>
-                            <View>
+                            <View style={{ flex: 1 }}>
                                 <ThemedText style={styles.progressCardTitle}>Overall Progress</ThemedText>
                                 <ThemedText style={[styles.progressCardSubtitle, { opacity: 0.5 }]}>
                                     Day {daysSinceStart} of {totalDuration}
                                 </ThemedText>
                             </View>
-                            <View style={[styles.percentageCircle, { borderColor: themeColors.tint }]}>
+                            <View style={[styles.percentageCircle, {
+                                borderColor: themeColors.tint,
+                                backgroundColor: `${themeColors.tint}15`
+                            }]}>
                                 <ThemedText style={[styles.percentageText, { color: themeColors.tint }]}>
                                     {planProgress.toFixed(0)}%
                                 </ThemedText>
@@ -400,11 +717,189 @@ export default function ProgressScreen() {
                                 <View style={[styles.progressFill, { width: `${planProgress}%`, backgroundColor: themeColors.tint }]} />
                             </View>
                         </View>
+                        {planProgress >= 50 && (
+                            <View style={styles.milestoneIndicator}>
+                                <MaterialCommunityIcons name="star" size={16} color="#FFD700" />
+                                <ThemedText style={[styles.milestoneText, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
+                                    {planProgress >= 100 ? 'Goal Achieved! 🎉' : 'Halfway There! Keep Going! 💪'}
+                                </ThemedText>
+                            </View>
+                        )}
+                    </View>
+                </View>
+
+                {/* Streaks Section - Pills Tabs */}
+                <View style={[styles.streaksSection, { backgroundColor: themeColors.background }]}>
+                    <View style={styles.sectionHeader}>
+                        <MaterialCommunityIcons name="fire" size={24} color={themeColors.tint} />
+                        <ThemedText style={styles.sectionTitle}>Streaks</ThemedText>
+                    </View>
+                    
+                    {/* Pills Tabs */}
+                    <View style={[styles.pillsTabsContainer, {
+                        backgroundColor: colorScheme === 'dark' ? '#1C1F2015' : '#F3F4F6'
+                    }]}>
+                        <Pressable
+                            style={[
+                                styles.pillTab,
+                                streakPage === 0 && styles.pillTabActive,
+                                streakPage === 0 && { backgroundColor: themeColors.tint }
+                            ]}
+                            onPress={() => {
+                                setStreakPage(0);
+                                streakScrollRef.current?.scrollTo({ x: 0, animated: true });
+                            }}
+                        >
+                            <MaterialCommunityIcons
+                                name="fire"
+                                size={18}
+                                color={streakPage === 0 ? '#FFFFFF' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
+                            />
+                            <ThemedText style={[
+                                styles.pillTabText,
+                                { color: streakPage === 0 ? '#FFFFFF' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280') }
+                            ]}>
+                                Reduction
+                            </ThemedText>
+                        </Pressable>
+                        <Pressable
+                            style={[
+                                styles.pillTab,
+                                streakPage === 1 && styles.pillTabActive,
+                                streakPage === 1 && { backgroundColor: themeColors.tint }
+                            ]}
+                            onPress={() => {
+                                setStreakPage(1);
+                                streakScrollRef.current?.scrollTo({ x: screenWidth, animated: true });
+                            }}
+                        >
+                            <MaterialCommunityIcons
+                                name="smoking-off"
+                                size={18}
+                                color={streakPage === 1 ? '#FFFFFF' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
+                            />
+                            <ThemedText style={[
+                                styles.pillTabText,
+                                { color: streakPage === 1 ? '#FFFFFF' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280') }
+                            ]}>
+                                Smoke-Free
+                            </ThemedText>
+                        </Pressable>
+                    </View>
+
+                    {/* Tab Description */}
+                    <ThemedText style={[styles.tabDescription, {
+                        color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'
+                    }]}>
+                        {streakPage === 0
+                            ? 'Days you stayed within your nicotine limit'
+                            : 'Days with zero nicotine consumption'}
+                    </ThemedText>
+
+                    {/* Swipeable Streaks Content */}
+                    <ScrollView
+                        ref={streakScrollRef}
+                        horizontal
+                        pagingEnabled
+                        showsHorizontalScrollIndicator={false}
+                        scrollEventThrottle={16}
+                        onMomentumScrollEnd={(event) => {
+                            const offsetX = event.nativeEvent.contentOffset.x;
+                            const page = Math.round(offsetX / screenWidth);
+                            setStreakPage(page);
+                        }}
+                        style={styles.streakScrollView}
+                    >
+                        {/* Reduction Streaks Page */}
+                        <View style={[styles.streakPage, { width: screenWidth }]}>
+                            <View style={styles.streaksGrid}>
+                                <View style={[styles.streakCard, { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }]}>
+                                    <View style={[styles.streakIconContainer, { backgroundColor: '#FF6B3520' }]}>
+                                        <MaterialCommunityIcons name="fire" size={32} color="#FF6B35" />
+                                    </View>
+                                    <ThemedText style={[styles.streakValue, { color: '#FF6B35' }]}>
+                                        {currentStreak}
+                                    </ThemedText>
+                                    <ThemedText style={styles.streakLabel}>
+                                        {currentStreak === 1 ? 'Day' : 'Days'}
+                                    </ThemedText>
+                                    <ThemedText style={[styles.streakSubLabel, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
+                                        Current
+                                    </ThemedText>
+                                </View>
+                                <View style={[styles.streakCard, { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }]}>
+                                    <View style={[styles.streakIconContainer, { backgroundColor: '#FFD70020' }]}>
+                                        <MaterialCommunityIcons name="trophy" size={32} color="#FFD700" />
+                                    </View>
+                                    <ThemedText style={[styles.streakValue, { color: '#FFD700' }]}>
+                                        {longestStreak}
+                                    </ThemedText>
+                                    <ThemedText style={styles.streakLabel}>
+                                        {longestStreak === 1 ? 'Day' : 'Days'}
+                                    </ThemedText>
+                                    <ThemedText style={[styles.streakSubLabel, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
+                                        Best
+                                    </ThemedText>
+                                </View>
+                            </View>
+                        </View>
+
+                        {/* Clean Days Streaks Page */}
+                        <View style={[styles.streakPage, { width: screenWidth }]}>
+                            <View style={styles.streaksGrid}>
+                                <View style={[styles.streakCard, { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }]}>
+                                    <View style={[styles.streakIconContainer, { backgroundColor: '#8B5CF620' }]}>
+                                        <MaterialCommunityIcons name="fire" size={32} color="#8B5CF6" />
+                                    </View>
+                                    <ThemedText style={[styles.streakValue, { color: '#8B5CF6' }]}>
+                                        {currentSmokeFreeStreak}
+                                    </ThemedText>
+                                    <ThemedText style={styles.streakLabel}>
+                                        {currentSmokeFreeStreak === 1 ? 'Day' : 'Days'}
+                                    </ThemedText>
+                                    <ThemedText style={[styles.streakSubLabel, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
+                                        Current
+                                    </ThemedText>
+                                </View>
+                                <View style={[styles.streakCard, { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }]}>
+                                    <View style={[styles.streakIconContainer, { backgroundColor: '#FFD70020' }]}>
+                                        <MaterialCommunityIcons name="trophy" size={32} color="#FFD700" />
+                                    </View>
+                                    <ThemedText style={[styles.streakValue, { color: '#FFD700' }]}>
+                                        {longestSmokeFreeStreak}
+                                    </ThemedText>
+                                    <ThemedText style={styles.streakLabel}>
+                                        {longestSmokeFreeStreak === 1 ? 'Day' : 'Days'}
+                                    </ThemedText>
+                                    <ThemedText style={[styles.streakSubLabel, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
+                                        Best
+                                    </ThemedText>
+                                </View>
+                            </View>
+                        </View>
+                    </ScrollView>
+
+                    {/* Page Indicators */}
+                    <View style={styles.pageIndicators}>
+                        <View style={[
+                            styles.pageIndicator,
+                            {
+                                backgroundColor: streakPage === 0 ? themeColors.tint : (colorScheme === 'dark' ? '#374151' : '#E5E7EB'),
+                                width: streakPage === 0 ? 24 : 8,
+                            }
+                        ]} />
+                        <View style={[
+                            styles.pageIndicator,
+                            {
+                                backgroundColor: streakPage === 1 ? themeColors.tint : (colorScheme === 'dark' ? '#374151' : '#E5E7EB'),
+                                width: streakPage === 1 ? 24 : 8,
+                            }
+                        ]} />
                     </View>
                 </View>
 
                 {/* Main Content */}
-                <View style={styles.contentContainer}>
+                <View style={[styles.contentContainer, { backgroundColor: themeColors.background }]}>
                     {/* Achievements Section */}
                     <View style={styles.achievementsContainer}>
                         <View style={styles.sectionHeader}>
@@ -413,81 +908,161 @@ export default function ProgressScreen() {
                                 size={24}
                                 color={themeColors.tint}
                             />
-                            <ThemedText style={styles.sectionTitle}>Your Achievements</ThemedText>
+                            <ThemedText style={styles.sectionTitle}>Achievements</ThemedText>
                         </View>
                         <View style={styles.gridContainer}>
-                            {achievements.map((item, index) => (
-                                <AchievementCard key={index} {...item} />
-                            ))}
-                        </View>
-                    </View>
-
-                    {/* Motivational Message */}
-                    <View style={[
-                        styles.motivationCard,
-                        { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }
-                    ]}>
-                        <MaterialCommunityIcons
-                            name="lightbulb-on-outline"
-                            size={24}
-                            color={themeColors.tint}
-                            style={{ marginBottom: 8 }}
-                        />
-                        <ThemedText style={styles.motivationTitle}>Keep Going!</ThemedText>
-                        <ThemedText style={[styles.motivationText, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
-                            Every day you're getting stronger and healthier. You're doing amazing!
-                        </ThemedText>
-                    </View>
-
-                    {/* Calendar Heatmap */}
-                    <View style={styles.chartSection}>
-                        <View style={styles.sectionHeader}>
-                            <MaterialCommunityIcons
-                                name="calendar-month"
-                                size={24}
-                                color={themeColors.tint}
+                            <AchievementCard
+                                {...achievements[0]}
                             />
-                            <ThemedText style={styles.sectionTitle}>Daily Performance</ThemedText>
+                            <AchievementCard
+                                {...achievements[1]}
+                            />
                         </View>
-                        <View style={[
-                            styles.chartCard,
-                            { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }
-                        ]}>
-                            <ThemedText style={styles.chartSubtitle}>Last 4 Weeks</ThemedText>
-                            <CalendarHeatmap data={calendarData} colorScheme={colorScheme} />
-                            <View style={styles.heatmapLegend}>
-                                <ThemedText style={styles.legendText}>Less</ThemedText>
-                                <View style={styles.legendBoxes}>
-                                    {[0, 1, 2, 3, 4].map(i => (
-                                        <View
-                                            key={i}
-                                            style={[
-                                                styles.legendBox,
-                                                { backgroundColor: getHeatmapColor(i, colorScheme) }
-                                            ]}
-                                        />
-                                    ))}
+
+                        {/* Progress Summary Cards */}
+                        <View style={styles.progressSummarySection}>
+                            <Animated.View style={[
+                                styles.card,
+                                {
+                                    backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF',
+                                    borderRadius: 20,
+                                    transform: [{ scale: scaleAnim }],
+                                }
+                            ]}>
+                                <View style={[styles.iconContainer, { backgroundColor: '#06b6d420' }]}>
+                                    <MaterialCommunityIcons name="check-circle" size={28} color="#06b6d4" />
                                 </View>
-                                <ThemedText style={styles.legendText}>More</ThemedText>
-                            </View>
+                                <ThemedText style={[styles.cardValue, { color: '#06b6d4' }]}>
+                                    {daysWithinLimits}
+                                </ThemedText>
+                                <ThemedText style={[styles.cardLabel, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
+                                    Days Within Plan
+                                </ThemedText>
+                            </Animated.View>
+
+                            <Animated.View style={[
+                                styles.card,
+                                {
+                                    backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF',
+                                    borderRadius: 20,
+                                    transform: [{ scale: scaleAnim }],
+                                }
+                            ]}>
+                                <View style={[styles.iconContainer, { backgroundColor: '#d81b6020' }]}>
+                                    <MaterialCommunityIcons name="smoking-off" size={28} color="#d81b60" />
+                                </View>
+                                <ThemedText style={[styles.cardValue, { color: '#d81b60' }]}>
+                                    {smokeFreeDays}
+                                </ThemedText>
+                                <ThemedText style={[styles.cardLabel, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
+                                    Smoke-Free Days
+                                </ThemedText>
+                            </Animated.View>
+                        </View>
+
+                        {/* Quick Navigation Cards */}
+                        <View style={styles.quickNavSection}>
+                            <Pressable
+                                style={[styles.quickNavCard, { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }]}
+                                onPress={() => setHealthModalVisible(true)}
+                            >
+                                <View style={[styles.quickNavIcon, { backgroundColor: '#3b82f620' }]}>
+                                    <MaterialCommunityIcons name="hospital-box" size={28} color="#3b82f6" />
+                                </View>
+                                <View style={styles.quickNavContent}>
+                                    <ThemedText style={styles.quickNavLabel}>Health Improvements</ThemedText>
+                                    <ThemedText style={[styles.quickNavValue, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
+                                        {healthImprovementsCompleted} of 22 achieved
+                                    </ThemedText>
+                                </View>
+                                <MaterialCommunityIcons name="chevron-right" size={20} color={colorScheme === 'dark' ? '#6B7280' : '#9CA3AF'} />
+                            </Pressable>
+
+                            <Pressable
+                                style={[styles.quickNavCard, { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }]}
+                                onPress={() => setBadgesModalVisible(true)}
+                            >
+                                <View style={[styles.quickNavIcon, { backgroundColor: '#FFD70020' }]}>
+                                    <MaterialCommunityIcons name="trophy" size={28} color="#FFD700" />
+                                </View>
+                                <View style={styles.quickNavContent}>
+                                    <ThemedText style={styles.quickNavLabel}>Trophies</ThemedText>
+                                    <ThemedText style={[styles.quickNavValue, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
+                                        {unlockedBadgesCount} of {TOTAL_BADGES} badges earned
+                                    </ThemedText>
+                                </View>
+                                <MaterialCommunityIcons name="chevron-right" size={20} color={colorScheme === 'dark' ? '#6B7280' : '#9CA3AF'} />
+                            </Pressable>
                         </View>
                     </View>
 
-                    {/* Weekly Progress Bars */}
+                    {/* Weekly/Monthly Progress Bars */}
                     <View style={styles.chartSection}>
                         <View style={styles.sectionHeader}>
                             <MaterialCommunityIcons
-                                name="chart-bar"
+                                name="chart-timeline-variant"
                                 size={24}
                                 color={themeColors.tint}
                             />
-                            <ThemedText style={styles.sectionTitle}>Weekly Overview</ThemedText>
+                            <ThemedText style={styles.sectionTitle}>Consumption Overview</ThemedText>
                         </View>
                         <View style={[
                             styles.chartCard,
                             { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }
                         ]}>
-                            <WeeklyBars data={weeklyData} colorScheme={colorScheme} />
+                            {/* Toggle Pills */}
+                            <View style={[styles.pillsTabsContainer, {
+                                backgroundColor: colorScheme === 'dark' ? '#1C1F2015' : '#F3F4F6',
+                                marginBottom: 16
+                            }]}>
+                                <Pressable
+                                    style={[
+                                        styles.pillTab,
+                                        chartView === 'week' && styles.pillTabActive,
+                                        chartView === 'week' && { backgroundColor: themeColors.tint }
+                                    ]}
+                                    onPress={() => setChartView('week')}
+                                >
+                                    <MaterialCommunityIcons
+                                        name="calendar-week"
+                                        size={18}
+                                        color={chartView === 'week' ? '#FFFFFF' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
+                                    />
+                                    <ThemedText style={[
+                                        styles.pillTabText,
+                                        { color: chartView === 'week' ? '#FFFFFF' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280') }
+                                    ]}>
+                                        Weekly
+                                    </ThemedText>
+                                </Pressable>
+                                <Pressable
+                                    style={[
+                                        styles.pillTab,
+                                        chartView === 'month' && styles.pillTabActive,
+                                        chartView === 'month' && { backgroundColor: themeColors.tint }
+                                    ]}
+                                    onPress={() => setChartView('month')}
+                                >
+                                    <MaterialCommunityIcons
+                                        name="calendar-month"
+                                        size={18}
+                                        color={chartView === 'month' ? '#FFFFFF' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
+                                    />
+                                    <ThemedText style={[
+                                        styles.pillTabText,
+                                        { color: chartView === 'month' ? '#FFFFFF' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280') }
+                                    ]}>
+                                        Monthly
+                                    </ThemedText>
+                                </Pressable>
+                            </View>
+                            
+                            {/* Chart Display */}
+                            {chartView === 'week' ? (
+                                <WeeklyBars data={weeklyData} colorScheme={colorScheme} />
+                            ) : (
+                                <MonthlyBars data={monthlyData} colorScheme={colorScheme} />
+                            )}
                         </View>
                     </View>
 
@@ -516,216 +1091,223 @@ export default function ProgressScreen() {
                     )}
                 </View>
             </ScrollView>
+
+            {/* Modals */}
+            <HealthImprovements
+                visible={healthModalVisible}
+                onClose={() => setHealthModalVisible(false)}
+                daysSinceStart={daysSinceStart}
+            />
+            <AchievementBadges
+                visible={badgesModalVisible}
+                onClose={() => setBadgesModalVisible(false)}
+                stats={badgeStats}
+            />
         </ThemedView>
     );
 }
-// Helper function for heatmap colors
-const getHeatmapColor = (intensity: number, colorScheme: 'light' | 'dark') => {
-    const colors = {
-        light: ['#ebedf0', '#fecaca', '#fdba74', '#86efac', '#4ade80'],
-        dark: ['#1e293b', '#7f1d1d', '#7c2d12', '#166534', '#15803d'],
-    };
-    return colors[colorScheme][intensity] || colors[colorScheme][0];
-};
-
-// Consumption Trend Chart Component
-const ConsumptionTrendChart = ({ data, colorScheme }: { data: any[], colorScheme: 'light' | 'dark' }) => {
+// Weekly Bars Component - Daily nicotine consumption
+const WeeklyBars = ({ data, colorScheme }: { data: any[], colorScheme: 'light' | 'dark' }) => {
     if (data.length === 0) return <ThemedText style={{ textAlign: 'center', padding: 20 }}>No data yet</ThemedText>;
     
-    const maxValue = Math.max(...data.map(d => Math.max(d.actual, d.target)), 10);
-    const padding = 40;
-    const graphWidth = chartWidth - padding * 2;
-    const graphHeight = chartHeight - padding * 2;
-    const pointSpacing = graphWidth / (data.length - 1 || 1);
-    
-    const getY = (value: number) => {
-        return graphHeight - (value / maxValue) * graphHeight + padding;
-    };
-    
-    const actualPath = data.map((d, i) => {
-        const x = padding + i * pointSpacing;
-        const y = getY(d.actual);
-        return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-    }).join(' ');
-    
-    const targetPath = data.map((d, i) => {
-        const x = padding + i * pointSpacing;
-        const y = getY(d.target);
-        return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-    }).join(' ');
+    const maxValue = Math.max(...data.map(d => d.nicotine), 5);
+    const padding = 30;
+    const availableWidth = chartWidth - (padding * 2);
+    const barSpacing = 10;
+    const totalSpacing = barSpacing * (data.length - 1);
+    const barWidth = (availableWidth - totalSpacing) / data.length;
+    const graphHeight = 200;
     
     return (
-        <Svg width={chartWidth} height={chartHeight}>
-            {/* Grid lines */}
-            {[0, 0.25, 0.5, 0.75, 1].map((factor, i) => (
-                <G key={i}>
-                    <Line
-                        x1={padding}
-                        y1={padding + graphHeight * factor}
-                        x2={chartWidth - padding}
-                        y2={padding + graphHeight * factor}
-                        stroke={colorScheme === 'dark' ? '#374151' : '#E5E7EB'}
-                        strokeWidth="1"
-                        strokeDasharray="4,4"
-                    />
-                </G>
-            ))}
-            
-            {/* Target line */}
-            <Path
-                d={targetPath}
-                stroke="#3b82f6"
-                strokeWidth="2"
-                strokeDasharray="5,5"
-                fill="none"
-            />
-            
-            {/* Actual line */}
-            <Path
-                d={actualPath}
-                stroke="#10b981"
-                strokeWidth="3"
-                fill="none"
-            />
-            
-            {/* Data points */}
-            {data.map((d, i) => (
-                <Circle
-                    key={i}
-                    cx={padding + i * pointSpacing}
-                    cy={getY(d.actual)}
-                    r="4"
-                    fill="#10b981"
-                />
-            ))}
-            
-            {/* Labels */}
-            <SvgText
-                x={padding}
-                y={chartHeight - 10}
-                fontSize="10"
-                fill={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-            >
-                {data[0]?.dateStr || ''}
-            </SvgText>
-            <SvgText
-                x={chartWidth - padding - 40}
-                y={chartHeight - 10}
-                fontSize="10"
-                fill={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-            >
-                {data[data.length - 1]?.dateStr || ''}
-            </SvgText>
-        </Svg>
-    );
-};
-
-// Calendar Heatmap Component
-const CalendarHeatmap = ({ data, colorScheme }: { data: any[], colorScheme: 'light' | 'dark' }) => {
-    const cellSize = (chartWidth - 60) / 7;
-    const rows = 4;
-    
-    return (
-        <View style={{ paddingVertical: 20 }}>
-            <Svg width={chartWidth} height={cellSize * rows + 40}>
-                {data.map((day, index) => {
-                    const row = Math.floor(index / 7);
-                    const col = index % 7;
-                    const x = 30 + col * cellSize;
-                    const y = 20 + row * cellSize;
-                    
-                    return (
-                        <Rect
-                            key={index}
-                            x={x}
-                            y={y}
-                            width={cellSize - 4}
-                            height={cellSize - 4}
-                            rx="4"
-                            fill={getHeatmapColor(day.intensity, colorScheme)}
-                        />
-                    );
-                })}
-                
-                {/* Day labels */}
-                {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => (
-                    <SvgText
-                        key={i}
-                        x={30 + i * cellSize + cellSize / 2}
-                        y={15}
-                        fontSize="10"
-                        fill={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                        textAnchor="middle"
-                    >
-                        {day}
-                    </SvgText>
-                ))}
-            </Svg>
+        <View style={{ alignItems: 'center' }}>
+            <View style={{ paddingHorizontal: 20, paddingVertical: 16, alignItems: 'center' }}>
+                <ThemedText style={{ fontSize: 13, fontWeight: '600', marginBottom: 12 }}>
+                    Daily Nicotine Intake (mg)
+                </ThemedText>
+                <View style={{ flexDirection: 'row', gap: 16, justifyContent: 'center' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: '#10b981' }} />
+                        <ThemedText style={{ fontSize: 11, opacity: 0.7 }}>Within Limits</ThemedText>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: '#ef4444' }} />
+                        <ThemedText style={{ fontSize: 11, opacity: 0.7 }}>Over Limits</ThemedText>
+                    </View>
+                </View>
+            </View>
+            <View style={{ alignItems: 'center' }}>
+                <Svg width={chartWidth} height={270}>
+                    {data.map((day, index) => {
+                        const height = Math.max((day.nicotine / maxValue) * graphHeight, 8);
+                        const x = padding + index * (barWidth + barSpacing);
+                        const y = graphHeight - height + 20;
+                        const barColor = day.isWithinLimits ? '#10b981' : '#ef4444';
+                        
+                        return (
+                            <G key={index}>
+                                {/* Consumption bar */}
+                                <Rect
+                                    x={x}
+                                    y={y}
+                                    width={barWidth}
+                                    height={height}
+                                    rx="6"
+                                    fill={barColor}
+                                    opacity="0.85"
+                                />
+                                {/* Nicotine value */}
+                                <SvgText
+                                    x={x + barWidth / 2}
+                                    y={y - 10}
+                                    fontSize="11"
+                                    fill={colorScheme === 'dark' ? '#FFFFFF' : '#000000'}
+                                    textAnchor="middle"
+                                    fontWeight="bold"
+                                >
+                                    {day.nicotine}
+                                </SvgText>
+                                {/* Day name */}
+                                <SvgText
+                                    x={x + barWidth / 2}
+                                    y={graphHeight + 40}
+                                    fontSize="11"
+                                    fill={colorScheme === 'dark' ? '#E5E7EB' : '#1F2937'}
+                                    textAnchor="middle"
+                                    fontWeight="600"
+                                >
+                                    {day.day}
+                                </SvgText>
+                                {/* Date */}
+                                <SvgText
+                                    x={x + barWidth / 2}
+                                    y={graphHeight + 50}
+                                    fontSize="10"
+                                    fill={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                                    textAnchor="middle"
+                                >
+                                    {day.date}
+                                </SvgText>
+                            </G>
+                        );
+                    })}
+                </Svg>
+            </View>
         </View>
     );
 };
 
-// Weekly Bars Component
-const WeeklyBars = ({ data, colorScheme }: { data: any[], colorScheme: 'light' | 'dark' }) => {
+// Monthly Bars Component - Daily nicotine consumption for current month
+const MonthlyBars = ({ data, colorScheme }: { data: any[], colorScheme: 'light' | 'dark' }) => {
+    const scrollRef = useRef<ScrollView>(null);
+    
     if (data.length === 0) return <ThemedText style={{ textAlign: 'center', padding: 20 }}>No data yet</ThemedText>;
     
-    const maxValue = Math.max(...data.map(d => d.count), 10);
-    const padding = 40;
-    const availableWidth = chartWidth - (padding * 2);
-    const barSpacing = 16;
-    const totalSpacing = barSpacing * (data.length - 1);
-    const barWidth = (availableWidth - totalSpacing) / data.length;
-    const graphHeight = 150;
+    const maxValue = Math.max(...data.map(d => d.nicotine), 5);
+    const padding = 20;
+    const barSpacing = 4;
+    const barWidth = Math.max(8, Math.min(20, (chartWidth - padding * 2) / data.length));
+    const graphHeight = 200;
+    
+    // Find today's index and auto-scroll to it
+    const todayDate = format(new Date(), 'd');
+    const todayIndex = data.findIndex(d => d.date === todayDate);
+    
+    useEffect(() => {
+        if (scrollRef.current && todayIndex !== -1) {
+            // Calculate scroll position to center today's bar
+            const scrollX = Math.max(0, (todayIndex * (barWidth + barSpacing)) - (chartWidth / 3));
+            setTimeout(() => {
+                scrollRef.current?.scrollTo({ x: scrollX, animated: true });
+            }, 300);
+        }
+    }, [todayIndex, barWidth, barSpacing]);
     
     return (
-        <View style={{ paddingVertical: 20 }}>
-            <Svg width={chartWidth} height={graphHeight + 60}>
-                {data.map((week, index) => {
-                    const height = Math.max((week.count / maxValue) * graphHeight, 2);
-                    const x = padding + index * (barWidth + barSpacing);
-                    const y = graphHeight - height + 20;
-                    
-                    return (
-                        <G key={index}>
-                            <Rect
-                                x={x}
-                                y={y}
-                                width={barWidth}
-                                height={height}
-                                rx="8"
-                                fill={Colors[colorScheme].tint}
-                                opacity="0.8"
-                            />
-                            <SvgText
-                                x={x + barWidth / 2}
-                                y={y - 8}
-                                fontSize="12"
-                                fill={colorScheme === 'dark' ? '#FFFFFF' : '#000000'}
-                                textAnchor="middle"
-                                fontWeight="bold"
-                            >
-                                {week.count}
-                            </SvgText>
-                            <SvgText
-                                x={x + barWidth / 2}
-                                y={graphHeight + 40}
-                                fontSize="10"
-                                fill={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
-                                textAnchor="middle"
-                            >
-                                {week.week}
-                            </SvgText>
-                        </G>
-                    );
-                })}
-            </Svg>
+        <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ paddingHorizontal: 20, paddingVertical: 16, alignItems: 'center' }}>
+                <ThemedText style={{ fontSize: 13, fontWeight: '600', marginBottom: 8 }}>
+                    Daily Nicotine Intake - {format(new Date(), 'MMMM yyyy')}
+                </ThemedText>
+                <ThemedText style={{ fontSize: 11, opacity: 0.6, marginBottom: 12, fontWeight: '500' }}>
+                    {todayIndex !== -1 ? `Today: Day ${todayDate} • ` : ''}Swipe to see all {data.length} days
+                </ThemedText>
+                <View style={{ flexDirection: 'row', gap: 16, justifyContent: 'center' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: '#10b981' }} />
+                        <ThemedText style={{ fontSize: 11, opacity: 0.7 }}>Within Limits</ThemedText>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: '#ef4444' }} />
+                        <ThemedText style={{ fontSize: 11, opacity: 0.7 }}>Over Limits</ThemedText>
+                    </View>
+                </View>
+            </View>
+            <ScrollView
+                ref={scrollRef}
+                horizontal
+                showsHorizontalScrollIndicator={true}
+                contentContainerStyle={{ paddingHorizontal: padding }}
+            >
+                <Svg width={data.length * (barWidth + barSpacing) + padding * 2} height={270}>
+                    {data.map((day, index) => {
+                        const height = Math.max((day.nicotine / maxValue) * graphHeight, 8);
+                        const x = index * (barWidth + barSpacing) + padding;
+                        const y = graphHeight - height + 20;
+                        const barColor = day.isWithinLimits ? '#10b981' : '#ef4444';
+                        const isToday = format(new Date(), 'd') === day.date;
+                        
+                        return (
+                            <G key={index}>
+                                {/* Consumption bar */}
+                                <Rect
+                                    x={x}
+                                    y={y}
+                                    width={barWidth}
+                                    height={height}
+                                    rx="4"
+                                    fill={barColor}
+                                    opacity={isToday ? '1' : '0.9'}
+                                    stroke={isToday ? barColor : 'none'}
+                                    strokeWidth={isToday ? '2' : '0'}
+                                />
+                                {/* Nicotine value - only show for today or if bar is tall enough */}
+                                {(isToday || height > 30) && barWidth > 12 && (
+                                    <SvgText
+                                        x={x + barWidth / 2}
+                                        y={y - 6}
+                                        fontSize="9"
+                                        fill={colorScheme === 'dark' ? '#FFFFFF' : '#000000'}
+                                        textAnchor="middle"
+                                        fontWeight="bold"
+                                    >
+                                        {day.nicotine}
+                                    </SvgText>
+                                )}
+                                {/* Date - show every 3rd day or today */}
+                                {(index % 3 === 0 || isToday) && (
+                                    <SvgText
+                                        x={x + barWidth / 2}
+                                        y={graphHeight + 40}
+                                        fontSize="10"
+                                        fill={isToday ? (colorScheme === 'dark' ? '#FFFFFF' : '#000000') : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
+                                        textAnchor="middle"
+                                        fontWeight={isToday ? 'bold' : 'normal'}
+                                    >
+                                        {day.date}
+                                    </SvgText>
+                                )}
+                            </G>
+                        );
+                    })}
+                </Svg>
+            </ScrollView>
         </View>
     );
 };
 
 // Phase Progress Component
-const PhaseProgress = ({ phases, currentDay, colorScheme }: { 
-    phases: any[], 
+const PhaseProgress = ({ phases, currentDay, colorScheme }: {
+    phases: any[],
     currentDay: number,
     colorScheme: 'light' | 'dark'
 }) => {
@@ -749,65 +1331,94 @@ const PhaseProgress = ({ phases, currentDay, colorScheme }: {
                 
                 const isCompleted = currentDay >= tempCumulativeDays + phase.durationDays;
                 const isCurrent = index === currentPhaseIndex;
-                const isUpcoming = index > currentPhaseIndex;
-                
                 const progressInPhase = isCurrent ? ((currentDay - tempCumulativeDays) / phase.durationDays) * 100 : 0;
                 
                 return (
-                    <View key={index} style={styles.phaseRow}>
-                        <View style={styles.phaseIndicator}>
-                            <View style={[
-                                styles.phaseCircle,
-                                {
-                                    backgroundColor: isCompleted 
-                                        ? '#10b981' 
-                                        : isCurrent 
-                                            ? Colors[colorScheme].tint 
-                                            : colorScheme === 'dark' ? '#374151' : '#E5E7EB'
-                                }
-                            ]}>
-                                {isCompleted && (
-                                    <MaterialCommunityIcons name="check" size={16} color="#FFFFFF" />
-                                )}
-                                {isCurrent && (
-                                    <MaterialCommunityIcons name="clock-outline" size={16} color="#FFFFFF" />
-                                )}
-                            </View>
-                            {index < phases.length - 1 && (
+                    <View key={index} style={[
+                        styles.phaseCard,
+                        {
+                            backgroundColor: isCurrent
+                                ? colorScheme === 'dark' ? '#1C1F20' : '#F0F9FF'
+                                : 'transparent',
+                            borderLeftWidth: isCurrent ? 4 : 0,
+                            borderLeftColor: isCurrent ? Colors[colorScheme].tint : 'transparent'
+                        }
+                    ]}>
+                        <View style={styles.phaseRow}>
+                            <View style={styles.phaseIndicator}>
                                 <View style={[
-                                    styles.phaseLine,
+                                    styles.phaseCircle,
                                     {
-                                        backgroundColor: index < currentPhaseIndex 
-                                            ? '#10b981' 
-                                            : colorScheme === 'dark' ? '#374151' : '#E5E7EB'
+                                        backgroundColor: isCompleted
+                                            ? '#10b981'
+                                            : isCurrent
+                                                ? Colors[colorScheme].tint
+                                                : colorScheme === 'dark' ? '#374151' : '#E5E7EB',
+                                        borderWidth: isCurrent ? 3 : 0,
+                                        borderColor: isCurrent ? `${Colors[colorScheme].tint}40` : 'transparent'
                                     }
-                                ]} />
-                            )}
-                        </View>
-                        <View style={styles.phaseInfo}>
-                            <ThemedText style={[
-                                styles.phaseName,
-                                { fontWeight: isCurrent ? 'bold' : '600' }
-                            ]}>
-                                Phase {phase.phase}: {phase.phaseName}
-                            </ThemedText>
-                            <ThemedText style={[
-                                styles.phaseDetail,
-                                { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }
-                            ]}>
-                                {phase.durationDays} days • Target: {phase.nicotineGoalMg}mg nicotine
-                            </ThemedText>
-                            {isCurrent && (
-                                <View style={styles.phaseProgressBar}>
+                                ]}>
+                                    {isCompleted && (
+                                        <MaterialCommunityIcons name="check" size={18} color="#FFFFFF" />
+                                    )}
+                                    {isCurrent && (
+                                        <MaterialCommunityIcons name="lightning-bolt" size={18} color="#FFFFFF" />
+                                    )}
+                                </View>
+                                {index < phases.length - 1 && (
                                     <View style={[
-                                        styles.phaseProgressFill,
-                                        { 
-                                            width: `${progressInPhase}%`,
-                                            backgroundColor: Colors[colorScheme].tint
+                                        styles.phaseLine,
+                                        {
+                                            backgroundColor: index < currentPhaseIndex
+                                                ? '#10b981'
+                                                : colorScheme === 'dark' ? '#374151' : '#E5E7EB'
                                         }
                                     ]} />
+                                )}
+                            </View>
+                            <View style={styles.phaseInfo}>
+                                <View style={styles.phaseHeader}>
+                                    <ThemedText style={[
+                                        styles.phaseName,
+                                        {
+                                            fontWeight: isCurrent ? 'bold' : '600',
+                                            fontSize: isCurrent ? 16 : 15
+                                        }
+                                    ]}>
+                                        Phase {phase.phase}: {phase.phaseName}
+                                    </ThemedText>
+                                    {isCompleted && (
+                                        <MaterialCommunityIcons name="check-circle" size={20} color="#10b981" />
+                                    )}
                                 </View>
-                            )}
+                                <ThemedText style={[
+                                    styles.phaseDetail,
+                                    { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }
+                                ]}>
+                                    {phase.durationDays} days • Target: {phase.nicotineGoalMg}mg nicotine
+                                </ThemedText>
+                                {isCurrent && (
+                                    <View style={styles.phaseProgressContainer}>
+                                        <View style={styles.phaseProgressInfo}>
+                                            <ThemedText style={[styles.progressLabel, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
+                                                Progress
+                                            </ThemedText>
+                                            <ThemedText style={[styles.progressPercent, { color: Colors[colorScheme].tint }]}>
+                                                {Math.round(progressInPhase)}%
+                                            </ThemedText>
+                                        </View>
+                                        <View style={styles.phaseProgressBar}>
+                                            <View style={[
+                                                styles.phaseProgressFill,
+                                                {
+                                                    width: `${progressInPhase}%`,
+                                                    backgroundColor: Colors[colorScheme].tint
+                                                }
+                                            ]} />
+                                        </View>
+                                    </View>
+                                )}
+                            </View>
                         </View>
                     </View>
                 );
@@ -831,21 +1442,6 @@ const styles = StyleSheet.create({
         padding: 24,
         paddingTop: 32,
         paddingBottom: 12,
-    },
-    headerContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 16,
-        marginBottom: 24,
-    },
-    freedomTitle: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        letterSpacing: 0.3,
-    },
-    freedomSubtitle: {
-        fontSize: 14,
-        marginTop: 4,
     },
     countdownGrid: {
         flexDirection: 'row',
@@ -925,6 +1521,19 @@ const styles = StyleSheet.create({
         height: '100%',
         borderRadius: 5,
     },
+    milestoneIndicator: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginTop: 16,
+        paddingTop: 16,
+        borderTopWidth: 1,
+        borderTopColor: '#E5E7EB',
+    },
+    milestoneText: {
+        fontSize: 13,
+        fontWeight: '600',
+    },
     contentContainer: {
         padding: 24,
         paddingTop: 12,
@@ -934,9 +1543,14 @@ const styles = StyleSheet.create({
     },
     sectionHeader: {
         flexDirection: 'row',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         gap: 10,
-        marginBottom: 20,
+        marginBottom: 12,
+    },
+    sectionSubtitle: {
+        fontSize: 12,
+        marginTop: 4,
+        fontWeight: '500',
     },
     sectionTitle: {
         fontSize: 22,
@@ -944,9 +1558,9 @@ const styles = StyleSheet.create({
         letterSpacing: 0.3,
     },
     card: {
-        padding: 18,
-        borderRadius: 16,
-        marginBottom: 12,
+        padding: 16,
+        borderRadius: 20,
+        marginBottom: 6,
         alignItems: 'center',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
@@ -954,46 +1568,32 @@ const styles = StyleSheet.create({
         shadowRadius: 12,
         elevation: 3,
         width: '48%',
+        height: 155,
+        justifyContent: 'center',
     },
     iconContainer: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
+        width: 52,
+        height: 52,
+        borderRadius: 26,
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 12,
-    },
-    cardValue: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        marginBottom: 6,
-        letterSpacing: 0.5,
-    },
-    cardLabel: {
-        fontSize: 13,
-        textAlign: 'center',
-        fontWeight: '500',
-    },
-    motivationCard: {
-        padding: 24,
-        borderRadius: 20,
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 12,
-        elevation: 3,
-        marginBottom: 24,
-    },
-    motivationTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
         marginBottom: 8,
     },
-    motivationText: {
-        fontSize: 14,
+    cardValue: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        marginBottom: 4,
+        letterSpacing: 0.3,
         textAlign: 'center',
-        lineHeight: 20,
+        width: '100%',
+    },
+    cardLabel: {
+        fontSize: 11,
+        textAlign: 'center',
+        fontWeight: '500',
+        lineHeight: 14,
+        width: '100%',
+        paddingHorizontal: 4,
     },
     chartSection: {
         marginBottom: 24,
@@ -1010,18 +1610,24 @@ const styles = StyleSheet.create({
     chartSubtitle: {
         fontSize: 12,
         opacity: 0.7,
-        marginBottom: 10,
+        marginBottom: 5,
         textAlign: 'center',
     },
     heatmapLegend: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        marginTop: 15,
+        marginTop: 8,
         gap: 8,
+        flexWrap: 'wrap',
+    },
+    legendItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
     },
     legendText: {
-        fontSize: 11,
+        fontSize: 10,
         opacity: 0.7,
     },
     legendBoxes: {
@@ -1029,39 +1635,19 @@ const styles = StyleSheet.create({
         gap: 4,
     },
     legendBox: {
-        width: 16,
-        height: 16,
-        borderRadius: 4,
+        width: 14,
+        height: 14,
+        borderRadius: 3,
     },
-    milestoneRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
+    phaseCard: {
+        paddingHorizontal: 16,
         paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: '#E5E7EB10',
-    },
-    milestoneIcon: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 12,
-    },
-    milestoneContent: {
-        flex: 1,
-    },
-    milestoneLabel: {
-        fontSize: 14,
-        fontWeight: '600',
-        marginBottom: 2,
-    },
-    milestoneTime: {
-        fontSize: 12,
+        marginBottom: 12,
+        borderRadius: 12,
     },
     phaseRow: {
         flexDirection: 'row',
-        marginBottom: 20,
+        marginBottom: 0,
     },
     phaseIndicator: {
         width: 40,
@@ -1069,9 +1655,9 @@ const styles = StyleSheet.create({
         marginRight: 16,
     },
     phaseCircle: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -1082,25 +1668,219 @@ const styles = StyleSheet.create({
     },
     phaseInfo: {
         flex: 1,
-        paddingBottom: 8,
+        paddingBottom: 0,
+    },
+    phaseHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 6,
     },
     phaseName: {
         fontSize: 15,
-        marginBottom: 4,
+        marginBottom: 0,
+        flex: 1,
     },
     phaseDetail: {
         fontSize: 12,
+        marginBottom: 12,
+    },
+    phaseProgressContainer: {
+        marginTop: 12,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: '#E5E7EB',
+    },
+    phaseProgressInfo: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         marginBottom: 8,
     },
+    progressLabel: {
+        fontSize: 11,
+        fontWeight: '500',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    progressPercent: {
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
     phaseProgressBar: {
-        height: 6,
+        height: 8,
         backgroundColor: '#E5E7EB',
-        borderRadius: 3,
+        borderRadius: 4,
         overflow: 'hidden',
-        marginTop: 8,
+        marginTop: 0,
     },
     phaseProgressFill: {
         height: '100%',
-        borderRadius: 3,
+        borderRadius: 4,
+    },
+    quickNavSection: {
+        gap: 12,
+        marginTop: 8,
+    },
+    quickNavCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        borderRadius: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        elevation: 2,
+    },
+    quickNavIcon: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
+    },
+    quickNavContent: {
+        flex: 1,
+    },
+    quickNavLabel: {
+        fontSize: 15,
+        fontWeight: '600',
+        marginBottom: 2,
+    },
+    quickNavValue: {
+        fontSize: 12,
+        fontWeight: '500',
+    },
+    streaksSection: {
+        paddingHorizontal: 24,
+        paddingTop: 16,
+        paddingBottom: 12,
+    },
+    streaksGrid: {
+        flexDirection: 'row',
+        gap: 12,
+        marginBottom: 8,
+    },
+    streakCard: {
+        flex: 1,
+        padding: 20,
+        paddingBottom: 24,
+        borderRadius: 20,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+        elevation: 3,
+    },
+    streakIconContainer: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 12,
+    },
+    streakValue: {
+        fontSize: 36,
+        fontWeight: 'bold',
+        marginBottom: 4,
+        letterSpacing: 0.5,
+    },
+    streakLabel: {
+        fontSize: 14,
+        fontWeight: '600',
+        marginBottom: 2,
+    },
+    streakSubLabel: {
+        fontSize: 12,
+        fontWeight: '500',
+        textAlign: 'center',
+    },
+    totalDaysCard: {
+        // Styles are inline in JSX for better control
+    },
+    totalDaysIconContainer: {
+        // Styles are inline in JSX for better control
+    },
+    totalDaysValue: {
+        // Styles are inline in JSX for better control
+    },
+    totalDaysLabel: {
+        // Styles are inline in JSX for better control
+    },
+    pillsTabsContainer: {
+        flexDirection: 'row',
+        padding: 4,
+        borderRadius: 12,
+        marginBottom: 12,
+        gap: 8,
+    },
+    pillTab: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderRadius: 10,
+        gap: 6,
+    },
+    pillTabActive: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+        elevation: 4,
+    },
+    pillTabText: {
+        fontSize: 14,
+        fontWeight: '600',
+        letterSpacing: 0.3,
+    },
+    tabDescription: {
+        fontSize: 13,
+        textAlign: 'center',
+        marginBottom: 16,
+        fontWeight: '500',
+        opacity: 0.8,
+    },
+    progressSummarySection: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+        gap: 12,
+        marginTop: 8,
+    },
+    streakScrollView: {
+        marginHorizontal: -24,
+    },
+    streakPage: {
+        paddingHorizontal: 24,
+        paddingBottom: 8,
+    },
+    pageIndicators: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 8,
+        marginTop: 8,
+    },
+    pageIndicator: {
+        height: 8,
+        borderRadius: 4,
+    },
+    cardTapHint: {
+        position: 'absolute',
+        top: 12,
+        right: 12,
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 });

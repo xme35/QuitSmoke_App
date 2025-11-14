@@ -17,7 +17,7 @@ export default function AgeScreen() {
     if (appState.age === null) {
       setAppState((prevState) => ({ ...prevState, age: 25 }));
     }
-  }, []);
+  }, [appState.age, setAppState]);
 
   const handleAgeChange = (newAge: number) => {
     setAge(newAge);

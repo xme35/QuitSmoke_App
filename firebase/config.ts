@@ -4,7 +4,9 @@ import {
   getAuth,
   initializeAuth,
   type Auth,
+  type Persistence,
 } from 'firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFirestore } from 'firebase/firestore';
 
 export const firebaseConfig = {
@@ -19,17 +21,58 @@ export const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
+const STORAGE_AVAILABLE_KEY = '__sak';
+
+const createReactNativePersistence = (storage: typeof AsyncStorage) => {
+  const PersistenceClass = class {
+    readonly type = 'LOCAL' as const;
+
+    async _isAvailable(): Promise<boolean> {
+      try {
+        await storage.setItem(STORAGE_AVAILABLE_KEY, '1');
+        await storage.removeItem(STORAGE_AVAILABLE_KEY);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    async _set(key: string, value: unknown): Promise<void> {
+      await storage.setItem(key, JSON.stringify(value));
+    }
+
+    async _get<T = unknown>(key: string): Promise<T | null> {
+      const json = await storage.getItem(key);
+      return json ? (JSON.parse(json) as T) : null;
+    }
+
+    async _remove(key: string): Promise<void> {
+      await storage.removeItem(key);
+    }
+
+    _addListener(): void {
+      // Listeners não são suportados em AsyncStorage
+    }
+
+    _removeListener(): void {
+      // Listeners não são suportados em AsyncStorage
+    }
+  };
+
+  (PersistenceClass as unknown as { type: string }).type = 'LOCAL';
+
+  return PersistenceClass;
+};
+
 let authInstance: Auth;
 
 if (Platform.OS === 'web') {
   authInstance = getAuth(app);
 } else {
   try {
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    const { getReactNativePersistence } = require('firebase/auth/react-native');
-    const persistence = getReactNativePersistence(AsyncStorage);
+    const persistence = createReactNativePersistence(AsyncStorage);
     authInstance = initializeAuth(app, {
-      persistence,
+      persistence: persistence as unknown as Persistence,
     });
   } catch (error) {
     console.warn(

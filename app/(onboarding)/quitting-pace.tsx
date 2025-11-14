@@ -46,8 +46,8 @@ export default function QuittingPaceScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={styles.mainContent}>
-        <ThemedText type="title" style={styles.title}>What quitting pace{'\n'} suits you?</ThemedText>
-        <ThemedText style={styles.subtitle}>We'll create a personalized plan{'\n'} based on your choice.</ThemedText>
+        <ThemedText type="title" style={styles.title}>{`What quitting pace\n suits you?`}</ThemedText>
+        <ThemedText style={styles.subtitle}>{`We\u2019ll create a personalized plan\n based on your choice.`}</ThemedText>
         <View style={styles.optionsContainer}>
           {OPTIONS.map((opt) => (
             <SelectableCard

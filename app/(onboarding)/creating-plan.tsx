@@ -4,10 +4,11 @@ import { StyleSheet, View, TouchableOpacity, Animated } from 'react-native';
 import { Colors } from '../../constants/theme';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { AppState, useAppContext, TaperingPhase, Frequency, initialAppState } from '../../context/AppContext';
+import { AppState, useAppContext, TaperingPhase, initialAppState } from '../../context/AppContext';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NICOTINE_ESTIMATES } from '../../data/constants';
-import { setOnboardingStatus } from '@/helpers/onboarding-status';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../../firebase/config';
 
 const messages = [
   'Analyzing your profile...',
@@ -132,11 +133,6 @@ const sanitizeInteger = (value: unknown, fallback: number, min = 0, max = Number
   return clampNumber(safeFallback, min, max);
 };
 
-const computePhaseReductionPercent = (start: number, end: number): number => {
-  if (start <= 0) return 1;
-  return clampNumber((start - end) / start, 0, 1);
-};
-
 const generateDailyTargets = (start: number, goal: number, days: number): number[] => {
   const clampedDays = Math.max(0, Math.min(365, Math.floor(days)));
   if (clampedDays <= 0) return [];
@@ -145,66 +141,208 @@ const generateDailyTargets = (start: number, goal: number, days: number): number
   if (startValue <= goalValue) {
     return Array(clampedDays).fill(goalValue);
   }
+
   const decrement = (startValue - goalValue) / clampedDays;
   const targets: number[] = [];
   for (let day = 1; day <= clampedDays; day += 1) {
     const nextValue = Math.max(0, Math.round(startValue - decrement * day));
     targets.push(nextValue);
   }
-  targets[targets.length - 1] = goalValue;
+
+  if (targets.length > 0) {
+    targets[targets.length - 1] = goalValue;
+  }
+
   for (let i = 1; i < targets.length; i += 1) {
     targets[i] = Math.min(targets[i], targets[i - 1]);
   }
+
+  if (startValue > goalValue && targets.length > 0 && targets[0] >= startValue) {
+    const minimumStep = Math.max(1, Math.ceil((startValue - goalValue) / clampedDays));
+    const adjustedFirst = Math.max(goalValue, Math.min(startValue - 1, startValue - minimumStep));
+    targets[0] = adjustedFirst;
+    for (let i = 1; i < targets.length; i += 1) {
+      targets[i] = Math.min(targets[i], targets[i - 1]);
+    }
+    targets[targets.length - 1] = goalValue;
+  }
+
   return targets;
 };
 
+interface PhaseOutline {
+  phase?: number;
+  durationDays?: number;
+  note?: string | null;
+  notes?: string | null;
+  psychologicalRole?: string | null;
+}
 
-const validateDailyTargetsStrict = (
-  phaseLabel: string,
-  candidateTargets: unknown,
-  duration: number,
-  phaseStartMg: number,
-  cap?: number,
-): number[] => {
-  if (!Array.isArray(candidateTargets)) {
-    throw new Error(`AI plan is missing dailyTargetsMg for ${phaseLabel}`);
-  }
-  const sanitized = (candidateTargets as unknown[]).map((value, index) => {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) {
-      throw new Error(`AI plan contains an invalid daily target at day ${index + 1} of ${phaseLabel}`);
-    }
-    return Math.max(0, Math.round(numeric));
+interface PlanOutline {
+  planFramework?: string | null;
+  currency?: string | null;
+  estimatedSavings?: number | null;
+  phases?: PhaseOutline[];
+  taperingSchedule?: PhaseOutline[];
+}
+
+interface DeterministicPhaseConfig {
+  blueprint: PhaseBlueprint;
+  duration: number;
+  note: string | null;
+  psychologicalRole: string | null;
+}
+
+const sanitizePhaseDuration = (
+  blueprint: PhaseBlueprint,
+  rawDuration: unknown,
+  paceKey: PaceKey,
+): number => {
+  return sanitizeInteger(
+    rawDuration,
+    blueprint.fallbackDuration[paceKey],
+    blueprint.durationRange[0],
+    blueprint.durationRange[1],
+  );
+};
+
+const parsePlanOutline = (rawPlan: unknown, paceKey: PaceKey): DeterministicPhaseConfig[] => {
+  const outline = (typeof rawPlan === 'object' && rawPlan !== null ? rawPlan : {}) as PlanOutline;
+
+  const phaseCandidates =
+    Array.isArray(outline.phases) && outline.phases.length > 0
+      ? outline.phases
+      : Array.isArray(outline.taperingSchedule)
+        ? outline.taperingSchedule
+        : [];
+
+  return PHASE_BLUEPRINT.map(blueprint => {
+    const candidate = phaseCandidates.find(phase => phase?.phase === blueprint.phase);
+
+    const duration = sanitizePhaseDuration(blueprint, candidate?.durationDays, paceKey);
+
+    const note =
+      typeof candidate?.note === 'string' && candidate.note.trim().length > 0
+        ? candidate.note.trim()
+        : typeof candidate?.notes === 'string' && candidate.notes.trim().length > 0
+          ? candidate.notes.trim()
+          : null;
+
+    const psychologicalRole =
+      typeof candidate?.psychologicalRole === 'string' && candidate.psychologicalRole.trim().length > 0
+        ? candidate.psychologicalRole.trim()
+        : null;
+
+    return {
+      blueprint,
+      duration,
+      note,
+      psychologicalRole,
+    };
   });
-  if (sanitized.length !== duration) {
-    throw new Error(
-      `AI plan provided ${sanitized.length} daily targets for ${phaseLabel}, expected ${duration}`,
-    );
-  }
-  const roundedStart = Math.max(0, Math.round(phaseStartMg));
-  sanitized[0] = Math.min(sanitized[0], roundedStart);
-  for (let i = 1; i < sanitized.length; i += 1) {
-    sanitized[i] = Math.min(sanitized[i], sanitized[i - 1]);
-  }
-  if (typeof cap === 'number') {
-    const roundedCap = Math.round(cap);
-    let exceededCap = false;
-    for (let i = 0; i < sanitized.length; i += 1) {
-      if (sanitized[i] > roundedCap) {
-        exceededCap = true;
-        sanitized[i] = roundedCap;
+};
+
+const computeDeterministicSchedule = (
+  baselineIntake: number,
+  phaseConfigs: DeterministicPhaseConfig[],
+  paceKey: PaceKey,
+): TaperingPhase[] => {
+  let phaseStart = Math.max(0, Math.round(baselineIntake));
+  const schedule: TaperingPhase[] = [];
+
+  phaseConfigs.forEach(({ blueprint, duration, note, psychologicalRole }) => {
+    let goal: number;
+
+    if (typeof blueprint.forceFinalMg === 'number') {
+      goal = blueprint.forceFinalMg;
+    } else if (typeof blueprint.stabilizationTargetMg === 'number') {
+      goal = blueprint.stabilizationTargetMg;
+    } else {
+      let desiredReduction = blueprint.fallbackPercent[paceKey];
+      if (schedule.length > 0) {
+        const previousReduction = schedule[schedule.length - 1].totalReductionPercent;
+        desiredReduction = Math.max(desiredReduction, previousReduction + 0.05);
       }
-      sanitized[i] = Math.min(sanitized[i], roundedCap);
+      desiredReduction = clampNumber(
+        desiredReduction,
+        blueprint.percentRange[0],
+        blueprint.percentRange[1],
+      );
+      goal = Math.round(phaseStart * (1 - desiredReduction));
     }
-    if (exceededCap) {
-      console.warn(`Daily targets exceeded cap (${roundedCap}mg) in ${phaseLabel}. Values were clamped to the cap.`);
+
+    if (blueprint.phase === 4 || blueprint.phase === 5) {
+      goal = 0;
     }
-  }
-  const finalValue = sanitized[sanitized.length - 1];
-  if (finalValue > roundedStart) {
-    throw new Error(`Final target for ${phaseLabel} (${finalValue}mg) cannot exceed its start level`);
-  }
-  return sanitized;
+
+    if (typeof blueprint.targetCapMg === 'number') {
+      goal = Math.min(goal, blueprint.targetCapMg);
+    }
+
+    if (goal >= phaseStart && phaseStart > 0) {
+      goal = Math.max(0, phaseStart - Math.max(1, Math.round(phaseStart * 0.1)));
+    }
+
+    if (phaseStart <= 0) {
+      goal = 0;
+    }
+
+    const dailyTargets = generateDailyTargets(phaseStart, goal, duration);
+    const lastTarget = dailyTargets[dailyTargets.length - 1] ?? goal;
+
+    const reductionPercent =
+      phaseStart > 0 ? Number(((phaseStart - lastTarget) / phaseStart).toFixed(3)) : 0;
+
+    schedule.push({
+      phase: blueprint.phase,
+      phaseName: blueprint.phaseName,
+      psychologicalRole: psychologicalRole ?? blueprint.psychologicalRole,
+      durationDays: duration,
+      nicotineGoalMg: lastTarget,
+      totalReductionPercent: reductionPercent,
+      dailyTargetsMg: dailyTargets,
+      notes: note ?? blueprint.defaultNotes,
+    });
+
+    phaseStart = lastTarget;
+  });
+
+  return schedule;
+};
+
+const buildDeterministicPlan = (
+  rawPlan: unknown,
+  appState: AppState,
+  baselineIntake: number,
+  paceKey: PaceKey,
+) => {
+  const outline = (typeof rawPlan === 'object' && rawPlan !== null ? rawPlan : {}) as PlanOutline;
+  const phaseConfigs = parsePlanOutline(outline, paceKey);
+  const schedule = computeDeterministicSchedule(baselineIntake, phaseConfigs, paceKey);
+  const totalDuration = schedule.reduce((sum, phase) => sum + phase.durationDays, 0);
+
+  const estimatedSavings =
+    typeof outline.estimatedSavings === 'number' && Number.isFinite(outline.estimatedSavings)
+      ? Math.max(0, Math.round(outline.estimatedSavings))
+      : estimateFallbackSavings(appState, totalDuration);
+
+  const planCurrency =
+    typeof outline.currency === 'string' && outline.currency.trim().length > 0
+      ? outline.currency.trim().toUpperCase()
+      : null;
+
+  const planFramework =
+    typeof outline.planFramework === 'string' && outline.planFramework.trim().length > 0
+      ? outline.planFramework.trim()
+      : DEFAULT_PLAN_FRAMEWORK;
+
+  return {
+    schedule,
+    estimatedSavings,
+    planCurrency,
+    planFramework,
+    totalDuration,
+  };
 };
 
 const getNicotineEstimate = (appState: AppState, product: keyof typeof NICOTINE_ESTIMATES): number => {
@@ -220,12 +358,9 @@ const getNicotineEstimate = (appState: AppState, product: keyof typeof NICOTINE_
         ? preferences.nicotineStrengthMgPerCigarette
         : fallback;
     case 'Vape': {
-      const mgPerMl = preferences.nicotineStrengthMgPerMl;
-      const puffsPerPod = preferences.vapePuffsPerPod;
-      if (Number.isFinite(mgPerMl) && Number.isFinite(puffsPerPod) && puffsPerPod && mgPerMl) {
-        const assumedMlPerPod = 2; // Align with dashboard calculations
-        const perPuff = (mgPerMl * assumedMlPerPod) / puffsPerPod;
-        return Number.isFinite(perPuff) && perPuff > 0 ? perPuff : fallback;
+      const customMgPerPuff = (preferences as any)?.vapeNicotineMgPerPuff;
+      if (Number.isFinite(customMgPerPuff) && customMgPerPuff > 0) {
+        return customMgPerPuff;
       }
       return fallback;
     }
@@ -310,8 +445,6 @@ const estimateFallbackSavings = (appState: AppState, totalDuration: number): num
   return Math.max(0, Math.round(averageSavings));
 };
 
-const formatPercentRange = (range: [number, number]) => `${Math.round(range[0] * 100)}-${Math.round(range[1] * 100)}%`;
-
 const formatDurationRange = (range: [number, number]) => `${range[0]}-${range[1]} days`;
 
 const buildPlanPrompt = (
@@ -320,7 +453,17 @@ const buildPlanPrompt = (
   paceKey: PaceKey,
   currencyHint: string,
 ): string => {
-  const { age, countryName, sources, smokingHistory, quittingPace, cigarettes, vapes, heatedTobacco, nicotinePouches } = appState;
+  const {
+    age,
+    countryName,
+    sources,
+    smokingHistory,
+    quittingPace,
+    cigarettes,
+    vapes,
+    heatedTobacco,
+    nicotinePouches,
+  } = appState;
 
   const normalizeDailyAmount = (rawValue: number, frequency?: string | null) => {
     if (!Number.isFinite(rawValue) || rawValue <= 0) return 0;
@@ -339,303 +482,116 @@ const buildPlanPrompt = (
   if (cigarettes && cigarettes.amount > 0) {
     const daily = normalizeDailyAmount(cigarettes.amount, cigarettes.frequency);
     usageSummaries.push(
-      `Cigarettes: ${cigarettes.amount} per ${cigarettes.frequency} (avg ${daily.toFixed(1)}/day, ~${formatNicotineValue(getNicotineEstimate(appState, 'Cigarette'))}mg nicotine each)`
+      `Cigarettes: ${cigarettes.amount} per ${cigarettes.frequency} (avg ${daily.toFixed(
+        1,
+      )}/day, ~${formatNicotineValue(getNicotineEstimate(appState, 'Cigarette'))}mg nicotine each)`,
     );
   }
   if (vapes && vapes.puffs > 0) {
     const daily = normalizeDailyAmount(vapes.puffs, vapes.frequency);
     usageSummaries.push(
-      `Vape: ${vapes.puffs} puffs per ${vapes.frequency} (avg ${daily.toFixed(0)} puffs/day, ~${formatNicotineValue(getNicotineEstimate(appState, 'Vape'))}mg nicotine per puff)`
+      `Vape: ${vapes.puffs} puffs per ${vapes.frequency} (avg ${daily.toFixed(
+        0,
+      )} puffs/day, ~${formatNicotineValue(getNicotineEstimate(appState, 'Vape'))}mg nicotine per puff)`,
     );
   }
   if (heatedTobacco && heatedTobacco.sticks > 0) {
     const daily = normalizeDailyAmount(heatedTobacco.sticks, heatedTobacco.frequency);
     usageSummaries.push(
-      `Heated Tobacco: ${heatedTobacco.sticks} sticks per ${heatedTobacco.frequency} (avg ${daily.toFixed(1)}/day, ~${formatNicotineValue(getNicotineEstimate(appState, 'Heated Tobacco'))}mg nicotine each)`
+      `Heated Tobacco: ${heatedTobacco.sticks} sticks per ${heatedTobacco.frequency} (avg ${daily.toFixed(
+        1,
+      )}/day, ~${formatNicotineValue(getNicotineEstimate(appState, 'Heated Tobacco'))}mg nicotine each)`,
     );
   }
   if (nicotinePouches && nicotinePouches.pouches > 0) {
     const daily = normalizeDailyAmount(nicotinePouches.pouches, nicotinePouches.frequency);
     usageSummaries.push(
-      `Nicotine Pouches: ${nicotinePouches.pouches} per ${nicotinePouches.frequency} (avg ${daily.toFixed(1)}/day, ~${formatNicotineValue(getNicotineEstimate(appState, 'Nicotine Pouch'))}mg nicotine each)`
+      `Nicotine Pouches: ${nicotinePouches.pouches} per ${nicotinePouches.frequency} (avg ${daily.toFixed(
+        1,
+      )}/day, ~${formatNicotineValue(getNicotineEstimate(appState, 'Nicotine Pouch'))}mg nicotine each)`,
     );
   }
 
-  const usageDetails = usageSummaries.length > 0
-    ? usageSummaries.map(s => `  - ${s}`).join('\n')
-    : '  - No usage data provided';
+  const usageDetails =
+    usageSummaries.length > 0
+      ? usageSummaries.map(summary => `  - ${summary}`).join('\n')
+      : '  - No usage data provided';
 
-  const phaseGuidance = PHASE_BLUEPRINT.map((blueprint) => {
-    const percentRange = formatPercentRange(blueprint.percentRange);
+  const phaseGuidance = PHASE_BLUEPRINT.map(blueprint => {
     const durationRange = formatDurationRange(blueprint.durationRange);
     const paceDefault = blueprint.fallbackDuration[paceKey];
-    return `Phase ${blueprint.phase} "${blueprint.phaseName}": role = ${blueprint.psychologicalRole} | reduction ${percentRange} | duration ${durationRange} (pace default ${paceDefault} days).`;
+    return `Phase ${blueprint.phase} "${blueprint.phaseName}": role = ${blueprint.psychologicalRole} | duration ${durationRange} (pace default ${paceDefault} days).`;
   }).join('\n');
 
   const sourcesList = sources?.length ? sources.join(', ') : 'not provided';
   const paceLabel = quittingPace ?? 'Standard';
 
   return `
-You are an expert smoking-cessation planner. Produce a tapering plan in structured JSON.
+You are an expert smoking-cessation planner. Produce phase durations and high-level guidance for a nicotine tapering plan.
 
-Return a plain JSON object (no Markdown, no explanations) matching this TypeScript signature:
+Return JSON only (no Markdown, no extra commentary) matching this shape:
 {
-  "planFramework": "five-phase-structured",
+  "planFramework": string | null,
   "currency": string | null,
-  "estimatedSavings": number,
-  "taperingSchedule": [
+  "estimatedSavings": number | null,
+  "phases": [
     {
       "phase": number,
-      "phaseName": string,
-      "psychologicalRole": string,
       "durationDays": number,
-      "totalReductionPercent": number,
-      "nicotineGoalMg": number,
-      "dailyTargetsMg": number[],
-      "notes": string | null
+      "note": string | null,
+      "psychologicalRole": string | null
     }
   ]
 }
 
 Guidelines:
 ${phaseGuidance}
-- Use exactly five phases, numbered 1 through 5, matching the names above.
-- totalReductionPercent applies within the phase (0.00-1.00). Use up to three decimal places.
-- dailyTargetsMg must contain durationDays integers, monotonically non-increasing, representing the daily nicotine ceiling.
-- Phases 1 through 4 must progressively reduce nicotine. Each phase must reduce more than the previous one.
-- Phase 4 must finish at exactly 0 mg/day and should never exceed 5 mg on any day.
-- Phase 5 is a consolidation phase: totalReductionPercent = 0, dailyTargetsMg = all zeros, nicotineGoalMg = 0.
-- Use null (not strings) when data is unavailable.
-- Set planFramework to "five-phase-structured".
-- Set currency to an ISO code when possible (e.g., "${currencyHint}").
-- Self-validate before responding: durations > 0, phases sequential, dailyTargets length matches duration, nicotineGoalMg equals the last daily target.
+- Provide exactly five phases (1 through 5) using the names above.
+- Keep durationDays within the allowed range for each phase.
+- "note" should contain short behavioural guidance, or null if none.
+- "psychologicalRole" may refine or expand on the suggested role; use null if you have nothing to add.
+- If you are unsure of a value, return null rather than inventing it.
+- Do not include nicotine totals, daily targets, or other numeric tapering data—we will compute those.
+- Ensure the JSON parses directly with JSON.parse.
 
-Product usage details:
+Product usage context:
 ${usageDetails}
 
-Pricing and savings calculation:
-- Estimate typical LOCAL retail prices for each nicotine product as sold in ${countryName ?? 'the user\'s country'}.
-- Prices should reflect current market conditions in ${countryName ?? 'this country'}, including local taxes and regulations.
-- All prices and savings must be in ${currencyHint} (the local currency of ${countryName ?? 'the selected country'}).
-- Calculate total savings over the plan duration based on:
-  * Current daily consumption of each product
-  * Typical cost per unit (pack/pod/pouch) in local market
-  * Gradual reduction in consumption throughout the tapering schedule
-- Provide a realistic, evidence-based savings estimate.
-- Use your knowledge of typical product pricing in ${countryName ?? 'this country'} - no currency conversion needed.
-
-User data:
-- Current daily nicotine intake: ${currentIntake} mg
+User profile:
+- Current daily nicotine intake estimate: ${currentIntake} mg
 - Age: ${age ?? 'not provided'}
 - Country: ${countryName ?? 'not provided'}
-- Currency: ${currencyHint}
+- Currency preference: ${currencyHint}
 - Products used: ${sourcesList}
 - Smoking history: ${smokingHistory ?? 'not provided'}
-- Quitting pace preference: ${paceLabel}
+- Preferred quitting pace: ${paceLabel}
 
-Example response structure (do NOT copy these values - calculate based on actual user data and country-specific pricing):
-{
-  "planFramework": "five-phase-structured",
-  "currency": "${currencyHint}",
-  "estimatedSavings": 450,
-  "taperingSchedule": [
-    {
-      "phase": 1,
-      "phaseName": "Initial Adaptation",
-      "psychologicalRole": "Build awareness and stabilize routines.",
-      "durationDays": 10,
-      "totalReductionPercent": 0.120,
-      "nicotineGoalMg": 176,
-      "dailyTargetsMg": [198, 196, 194, 192, 190, 188, 186, 184, 180, 176],
-      "notes": "Track triggers and swap one small habit."
-    },
-    {
-      "phase": 2,
-      "phaseName": "Adjustment to Weaning",
-      "psychologicalRole": "Strengthen control with structured substitutions.",
-      "durationDays": 14,
-      "totalReductionPercent": 0.364,
-      "nicotineGoalMg": 112,
-      "dailyTargetsMg": [176, 172, 168, 164, 160, 156, 152, 148, 144, 140, 136, 132, 128, 112],
-      "notes": "Daily accountability check-ins."
-    },
-    {
-      "phase": 3,
-      "phaseName": "Control Reinforcement",
-      "psychologicalRole": "Reinforce confidence via coping scripts.",
-      "durationDays": 18,
-      "totalReductionPercent": 0.643,
-      "nicotineGoalMg": 40,
-      "dailyTargetsMg": [112, 108, 104, 100, 96, 92, 88, 84, 80, 76, 72, 68, 64, 60, 56, 52, 46, 40],
-      "notes": "Rehearse responses to cravings."
-    },
-    {
-      "phase": 4,
-      "phaseName": "Almost Free",
-      "psychologicalRole": "Prepare for a nicotine-free life.",
-      "durationDays": 21,
-      "totalReductionPercent": 1.000,
-      "nicotineGoalMg": 0,
-      "dailyTargetsMg": [40, 38, 36, 34, 32, 30, 28, 26, 24, 22, 20, 18, 16, 14, 12, 10, 8, 6, 4, 2, 0],
-      "notes": "Relapse prevention rehearsal."
-    },
-    {
-      "phase": 5,
-      "phaseName": "Nicotine-Free Consolidation",
-      "psychologicalRole": "Stabilize nicotine-free routines.",
-      "durationDays": 24,
-      "totalReductionPercent": 0,
-      "nicotineGoalMg": 0,
-      "dailyTargetsMg": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      "notes": "Celebrate milestones and reinforce identity."
-    }
-  ]
-}
+Your response must be valid JSON, with no backticks and no trailing commentary.
 `.trim();
 };
 
 const normalizePlanResponse = (
-  rawPlan: any,
+  rawPlan: unknown,
   appState: AppState,
   currentIntake: number,
   paceKey: PaceKey,
 ): GeneratedPlanDetails => {
-  let phaseStartMg = Math.max(0, Math.round(currentIntake));
   const currencyFallback = getCurrencyFallback(appState);
-  const schedule: TaperingPhase[] = [];
-  const reductionTracker: Record<number, number> = {};
+  const baselineIntake = Math.max(0, Math.round(currentIntake));
 
-  PHASE_BLUEPRINT.forEach((blueprint) => {
-    const phaseLabel = `phase ${blueprint.phase} (${blueprint.phaseName})`;
-    const candidate = Array.isArray(rawPlan?.taperingSchedule)
-      ? rawPlan.taperingSchedule.find((phase: any) => phase?.phase === blueprint.phase)
-      : undefined;
-
-    if (!candidate) {
-      throw new Error(`AI plan is missing ${phaseLabel}`);
-    }
-
-    const rawDuration = Number(candidate.durationDays);
-    if (!Number.isFinite(rawDuration)) {
-      throw new Error(`AI plan did not specify durationDays for ${phaseLabel}`);
-    }
-    const roundedDuration = Math.round(rawDuration);
-    if (roundedDuration < blueprint.durationRange[0] || roundedDuration > blueprint.durationRange[1]) {
-      throw new Error(
-        `durationDays for ${phaseLabel} must be between ${blueprint.durationRange[0]} and ${blueprint.durationRange[1]} (received ${roundedDuration})`,
-      );
-    }
-    const duration = roundedDuration;
-
-    if (typeof blueprint.stabilizationTargetMg === 'number') {
-      const target = Math.max(0, Math.round(blueprint.stabilizationTargetMg));
-      const stableTargets = validateDailyTargetsStrict(
-        phaseLabel,
-        candidate.dailyTargetsMg,
-        duration,
-        phaseStartMg,
-        blueprint.stabilizationTargetMg,
-      );
-
-      schedule.push({
-        phase: blueprint.phase,
-        phaseName:
-          typeof candidate?.phaseName === 'string' && candidate.phaseName.trim().length
-            ? candidate.phaseName.trim()
-            : blueprint.phaseName,
-        psychologicalRole:
-          typeof candidate?.psychologicalRole === 'string' && candidate.psychologicalRole.trim().length
-            ? candidate.psychologicalRole.trim()
-            : blueprint.psychologicalRole,
-        durationDays: duration,
-        nicotineGoalMg: stableTargets[stableTargets.length - 1],
-        totalReductionPercent: 0,
-        dailyTargetsMg: stableTargets,
-        notes:
-          typeof candidate?.notes === 'string' && candidate.notes.trim().length
-            ? candidate.notes.trim()
-            : blueprint.defaultNotes,
-      });
-
-      phaseStartMg = stableTargets[stableTargets.length - 1];
-      return;
-    }
-
-    const sanitizedTargets = validateDailyTargetsStrict(
-      phaseLabel,
-      candidate.dailyTargetsMg,
-      duration,
-      phaseStartMg,
-      blueprint.targetCapMg,
-    );
-    if (typeof blueprint.forceFinalMg === 'number') {
-      const forcedFinal = Math.max(0, Math.round(blueprint.forceFinalMg));
-      sanitizedTargets[sanitizedTargets.length - 1] = forcedFinal;
-    }
-    const nicotineGoalMg = sanitizedTargets[sanitizedTargets.length - 1];
-    const reductionPercentRaw = computePhaseReductionPercent(Math.max(0, phaseStartMg), nicotineGoalMg);
-    const reductionPercent = Number(reductionPercentRaw.toFixed(3));
-
-    schedule.push({
-      phase: blueprint.phase,
-      phaseName:
-        typeof candidate?.phaseName === 'string' && candidate.phaseName.trim().length
-          ? candidate.phaseName.trim()
-          : blueprint.phaseName,
-      psychologicalRole:
-        typeof candidate?.psychologicalRole === 'string' && candidate.psychologicalRole.trim().length
-          ? candidate.psychologicalRole.trim()
-          : blueprint.psychologicalRole,
-      durationDays: duration,
-      nicotineGoalMg,
-      totalReductionPercent: reductionPercent,
-      dailyTargetsMg: sanitizedTargets,
-      notes:
-        typeof candidate?.notes === 'string' && candidate.notes.trim().length
-          ? candidate.notes.trim()
-          : blueprint.defaultNotes,
-    });
- 
-    reductionTracker[blueprint.phase] = reductionPercentRaw;
-    phaseStartMg = nicotineGoalMg;
-  });
-
-  const requiredPhases = [1, 2, 3, 4] as const;
-  const phaseFour = schedule.find((phase) => phase.phase === 4);
-  if (!phaseFour || phaseFour.nicotineGoalMg !== 0) {
-    throw new Error('AI plan must reduce to 0 mg by the end of phase 4.');
-  }
-  for (let i = 1; i < requiredPhases.length; i += 1) {
-    const prevPhase = requiredPhases[i - 1];
-    const currentPhase = requiredPhases[i];
-    const prevReduction = reductionTracker[prevPhase];
-    const currentReduction = reductionTracker[currentPhase];
-    if (typeof prevReduction !== 'number' || typeof currentReduction !== 'number') {
-      throw new Error('AI plan must include phases 1 through 4 with valid reduction percentages.');
-    }
-    if (currentReduction <= prevReduction + 0.005) {
-      throw new Error(`Phase ${currentPhase} must reduce more nicotine than phase ${prevPhase}.`);
-    }
-  }
- 
-  const totalDuration = schedule.reduce((sum, phase) => sum + phase.durationDays, 0);
-  
-  // Use AI-provided savings or fall back to estimation
-  const aiSavings = sanitizeInteger(rawPlan?.estimatedSavings, 0, 0);
-  const fallbackSavings = estimateFallbackSavings(appState, totalDuration);
-  const finalSavings = aiSavings > 0 ? aiSavings : fallbackSavings;
+  const {
+    schedule,
+    estimatedSavings,
+    planCurrency,
+    planFramework,
+    totalDuration,
+  } = buildDeterministicPlan(rawPlan, appState, baselineIntake, paceKey);
 
   return {
     taperingSchedule: schedule,
-    estimatedSavings: finalSavings,
-    planFramework:
-      typeof rawPlan?.planFramework === 'string' && rawPlan.planFramework.trim().length
-        ? rawPlan.planFramework.trim()
-        : DEFAULT_PLAN_FRAMEWORK,
-    planCurrency:
-      typeof rawPlan?.currency === 'string' && rawPlan.currency.trim().length
-        ? rawPlan.currency.trim().toUpperCase()
-        : currencyFallback,
+    estimatedSavings,
+    planFramework,
+    planCurrency: planCurrency ?? currencyFallback,
     totalDuration,
   };
 };
@@ -750,7 +706,7 @@ export default function CreatingPlanScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(true);
   const router = useRouter();
-  const { appState, setAppState, user } = useAppContext();
+  const { appState, setAppState, user, isStateLoaded } = useAppContext();
   const isMountedRef = useRef(true);
   const navigationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
@@ -819,54 +775,95 @@ export default function CreatingPlanScreen() {
     try {
       const initialNicotineIntake = calculateCurrentNicotine(appState);
       const planDetails = await requestPlanWithRetries(appState, initialNicotineIntake);
+      console.log('[Plan Generation] Deterministic plan response', {
+        scheduleSample: planDetails.taperingSchedule.slice(0, 2),
+        estimatedSavings: planDetails.estimatedSavings,
+        totalDuration: planDetails.totalDuration,
+      });
 
       const planGeneratedAt = new Date().toISOString();
+      const planUpdatedAt = planGeneratedAt;
       const planStartDate = planGeneratedAt;
       const quitDateIso =
         planDetails.totalDuration > 0
           ? new Date(Date.now() + planDetails.totalDuration * MS_IN_DAY).toISOString()
           : null;
+
       const firstPhase = planDetails.taperingSchedule[0];
-      const firstDailyTarget = firstPhase?.dailyTargetsMg?.[0];
-      const fallbackPhaseTarget =
-        typeof firstPhase?.nicotineGoalMg === 'number' ? firstPhase.nicotineGoalMg : null;
+      const deterministicPrimaryTarget =
+        firstPhase?.dailyTargetsMg?.[0] ??
+        firstPhase?.nicotineGoalMg ??
+        initialNicotineIntake;
+
       const planPrimaryTarget =
-        typeof firstDailyTarget === 'number'
-          ? firstDailyTarget
-          : fallbackPhaseTarget ?? null;
+        typeof deterministicPrimaryTarget === 'number' && deterministicPrimaryTarget > 0
+          ? Math.round(deterministicPrimaryTarget)
+          : initialNicotineIntake;
+
       const resolvedInitialIntake =
-        (planPrimaryTarget ?? 0) > 0
-          ? (planPrimaryTarget as number)
-          : initialNicotineIntake > 0
-            ? initialNicotineIntake
-            : fallbackPhaseTarget ?? initialNicotineIntake;
+        planPrimaryTarget > 0 ? planPrimaryTarget : initialNicotineIntake;
 
-      setAppState((prev) => {
-        const resolvedCurrency =
-          planDetails.planCurrency ?? prev.planCurrency ?? getCurrencyFallback(prev);
+      const resolvedCurrency =
+        planDetails.planCurrency ?? appState.planCurrency ?? getCurrencyFallback(appState);
 
-        const basePreferences = (initialAppState.preferences ??
-          prev.preferences ??
-          {}) as NonNullable<AppState['preferences']>;
-        return {
-          ...prev,
-          taperingSchedule: planDetails.taperingSchedule,
-          estimatedSavings: planDetails.estimatedSavings,
-          totalDuration: planDetails.totalDuration,
-          reductionInterval: 1,
-          planFramework: planDetails.planFramework,
-          planCurrency: resolvedCurrency,
-          planGeneratedAt,
-          planStartDate,
-          quitDate: quitDateIso,
-          initialIntake: resolvedInitialIntake,
-          primaryDailyTargetMg: planPrimaryTarget ?? resolvedInitialIntake,
-          preferences: basePreferences,
-          isOnboardingComplete: true,
-        };
-      });
+      const basePreferences = (appState.preferences ??
+        initialAppState.preferences ??
+        {}) as NonNullable<AppState['preferences']>;
+      const previousRevision =
+        typeof appState.planRevision === 'number' && Number.isFinite(appState.planRevision)
+          ? appState.planRevision
+          : 0;
+      const planRevision = previousRevision + 1;
+      const activePlanId = `${user?.uid ?? 'anon'}:${planGeneratedAt}`;
 
-      await setOnboardingStatus(true, user?.uid);
+      const planUpdate: Partial<AppState> = {
+        taperingSchedule: planDetails.taperingSchedule,
+        estimatedSavings: planDetails.estimatedSavings,
+        totalDuration: planDetails.totalDuration,
+        reductionInterval: 1,
+        planFramework: planDetails.planFramework,
+        planCurrency: resolvedCurrency,
+        planGeneratedAt,
+        planUpdatedAt,
+        planStartDate,
+        quitDate: quitDateIso,
+        initialIntake: resolvedInitialIntake,
+        primaryDailyTargetMg: planPrimaryTarget ?? resolvedInitialIntake,
+        preferences: { ...basePreferences },
+        isOnboardingComplete: false,
+        planConfirmationPending: true,
+        planRevision,
+        activePlanId,
+      };
+
+      const nextPlanState: Partial<AppState> = {
+        ...planUpdate,
+        planUpdatedAt,
+        planRevision,
+        activePlanId,
+        consumptionLog: [],
+        consumptionHistory: [],
+        goals: [],
+        logs: [],
+        aiSummary: null,
+        planConfirmationPending: true,
+        isOnboardingComplete: false,
+      };
+ 
+      setAppState(prev => ({
+        ...prev,
+        ...nextPlanState,
+      }));
+ 
+      if (user) {
+        try {
+          const docRef = doc(db, 'users', user.uid);
+          await setDoc(docRef, nextPlanState, { merge: true });
+        } catch (error) {
+          console.error('Failed to persist generated plan to Firestore', error);
+        }
+      }
+
 
       const timeoutId = setTimeout(() => {
         if (!isMountedRef.current) {
@@ -887,14 +884,14 @@ export default function CreatingPlanScreen() {
       setErrorMessage(friendlyMessage);
       setIsGenerating(false);
     }
-  }, [appState, router, setAppState]);
+  }, [appState, router, setAppState, user]);
 
   useEffect(() => {
-    if (!hasAttemptedGeneration) {
+    if (!hasAttemptedGeneration && isStateLoaded) {
       setHasAttemptedGeneration(true);
       void attemptPlanGeneration();
     }
-  }, [attemptPlanGeneration, hasAttemptedGeneration]);
+  }, [attemptPlanGeneration, hasAttemptedGeneration, isStateLoaded]);
 
   const spinRotation = spinValue.interpolate({
     inputRange: [0, 1],

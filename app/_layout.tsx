@@ -4,6 +4,7 @@ import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-rout
 import type { Href } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppProvider, useAppContext } from '../context/AppContext';
+import { AuthProvider, useAuth } from '../context/AuthContext';
 import * as SplashScreen from 'expo-splash-screen';
 import { getLoginStatus, clearLoginStatus } from '@/helpers/login-status';
 import { getOnboardingStatus, setOnboardingStatus, clearOnboardingStatus } from '@/helpers/onboarding-status';
@@ -13,12 +14,15 @@ SplashScreen.preventAutoHideAsync();
 const AUTH_ROUTE: Href = '/(auth)/sign-in';
 const ONBOARDING_ROUTE: Href = '/(onboarding)/welcome';
 const DASHBOARD_ROUTE: Href = '/(tabs)/dashboard';
+const PUBLIC_ROUTES = new Set(['privacy', 'terms']);
 
 const RootNavigator = () => {
-  const { user, isLoading, appState } = useAppContext();
+  const { user, isLoading, appState, isStateLoaded } = useAppContext();
+  const { isAuthReady } = useAuth();
   const router = useRouter();
   const segments = useSegments();
   const rootNavigationState = useRootNavigationState();
+  const pendingGroupRef = useRef<string | null>(null);
   const [hasCheckedLoginStatus, setHasCheckedLoginStatus] = useState(false);
   const [hasCheckedOnboardingStatus, setHasCheckedOnboardingStatus] = useState(false);
   const [storedLoginStatus, setStoredLoginStatus] = useState(false);
@@ -26,15 +30,19 @@ const RootNavigator = () => {
   const [hasHiddenSplash, setHasHiddenSplash] = useState(false);
   const prevOnboardingStatusRef = useRef<boolean | undefined>(undefined);
   const [navigationReady, setNavigationReady] = useState(false);
+  const confirmationPending = !!appState?.planConfirmationPending;
   const onboardingComplete = !!appState?.isOnboardingComplete;
   const hasPlanData =
     Boolean(appState?.planGeneratedAt) ||
     Boolean(appState?.planStartDate) ||
     ((appState?.totalDuration ?? 0) > 0) ||
     (Array.isArray(appState?.taperingSchedule) && appState.taperingSchedule.length > 0);
+  const planResolved = (onboardingComplete || hasPlanData) && !confirmationPending;
 
   useEffect(() => {
     let isMounted = true;
+
+    setHasCheckedLoginStatus(false);
 
     const loadLoginStatus = async () => {
       try {
@@ -56,9 +64,13 @@ const RootNavigator = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [user]);
 
   useEffect(() => {
+    if (!isAuthReady) {
+      return;
+    }
+
     let isMounted = true;
 
     setHasCheckedOnboardingStatus(false);
@@ -85,7 +97,7 @@ const RootNavigator = () => {
     return () => {
       isMounted = false;
     };
-  }, [user]);
+  }, [user, isAuthReady]);
 
   useEffect(() => {
     const currentStatus = appState?.isOnboardingComplete;
@@ -109,7 +121,6 @@ const RootNavigator = () => {
       return;
     }
 
-    const planResolved = onboardingComplete || hasPlanData;
     if (!planResolved || storedOnboardingStatus) {
       return;
     }
@@ -133,26 +144,30 @@ const RootNavigator = () => {
     return () => {
       isMounted = false;
     };
-  }, [user, onboardingComplete, hasPlanData, storedOnboardingStatus]);
+  }, [user, planResolved, storedOnboardingStatus]);
 
   useEffect(() => {
     if (
       isLoading ||
+      !isAuthReady ||
       !hasCheckedLoginStatus ||
       !hasCheckedOnboardingStatus ||
-      !rootNavigationState
+      !rootNavigationState ||
+      (user && !isStateLoaded)
     ) {
       return;
     }
 
     console.log('[Onboarding] current segments', segments);
 
-    const onboardingResolved = storedOnboardingStatus || onboardingComplete || hasPlanData;
+    const onboardingResolved = storedOnboardingStatus || planResolved;
     console.log('[Onboarding] routing evaluation', {
       hasUser: Boolean(user),
       storedOnboardingStatus,
       onboardingComplete,
       hasPlanData,
+      confirmationPending,
+      planResolved,
       onboardingResolved,
       storedLoginStatus,
       navigationReady,
@@ -186,39 +201,51 @@ const RootNavigator = () => {
     }
 
     const currentGroup = segments[0];
-
     const navigationMounted = rootNavigationState?.key != null;
 
-    const hasTargetRoute =
-      targetGroup != null &&
-      rootNavigationState?.routes?.some(route => route.name === targetGroup);
+    if (currentGroup && PUBLIC_ROUTES.has(currentGroup)) {
+      if (navigationMounted) {
+        if (pendingGroupRef.current) {
+          pendingGroupRef.current = null;
+        }
+        if (!navigationReady) {
+          setNavigationReady(true);
+        }
+      }
+      return;
+    }
 
     if (targetGroup && targetRoute && currentGroup !== targetGroup) {
       if (!navigationMounted) {
         return;
       }
-      if (!hasTargetRoute) {
-        console.log('[Onboarding] Target group not yet registered in navigation state', {
-          targetGroup,
-          routes: rootNavigationState?.routes?.map(route => route.name),
-        });
-        return;
-      }
       if (navigationReady) {
         setNavigationReady(false);
       }
+      pendingGroupRef.current = targetGroup;
       console.log('[Onboarding] Executing router.replace to', targetRoute);
       router.replace(targetRoute);
       return;
     }
 
-    if (navigationMounted && !navigationReady) {
-      setNavigationReady(true);
+    if (navigationMounted) {
+      if (pendingGroupRef.current) {
+        if (segments[0] === pendingGroupRef.current) {
+          pendingGroupRef.current = null;
+          if (!navigationReady) {
+            setNavigationReady(true);
+          }
+        }
+      } else if (!navigationReady) {
+        setNavigationReady(true);
+      }
     }
   }, [
     user,
     onboardingComplete,
     hasPlanData,
+    confirmationPending,
+    planResolved,
     isLoading,
     segments,
     router,
@@ -228,11 +255,15 @@ const RootNavigator = () => {
     storedOnboardingStatus,
     hasCheckedOnboardingStatus,
     rootNavigationState,
+    isAuthReady,
+    isStateLoaded,
   ]);
 
   useEffect(() => {
     if (
       user ||
+      !isAuthReady ||
+      !isStateLoaded ||
       !hasCheckedLoginStatus ||
       !hasCheckedOnboardingStatus ||
       (!storedLoginStatus && !storedOnboardingStatus)
@@ -267,6 +298,8 @@ const RootNavigator = () => {
     hasCheckedOnboardingStatus,
     storedLoginStatus,
     storedOnboardingStatus,
+    isAuthReady,
+    isStateLoaded,
   ]);
 
   useEffect(() => {
@@ -293,8 +326,10 @@ const RootNavigator = () => {
 
   if (
     isLoading ||
+    !isAuthReady ||
     !hasCheckedLoginStatus ||
-    !hasCheckedOnboardingStatus
+    !hasCheckedOnboardingStatus ||
+    !navigationReady
   ) {
     return null;
   }
@@ -314,9 +349,11 @@ const RootNavigator = () => {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <AppProvider>
-        <RootNavigator />
-      </AppProvider>
+      <AuthProvider>
+        <AppProvider>
+          <RootNavigator />
+        </AppProvider>
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }

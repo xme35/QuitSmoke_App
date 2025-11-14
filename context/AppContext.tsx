@@ -1,8 +1,8 @@
 
-import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useRef } from 'react';
 import { auth, db } from '../firebase/config';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 
 // ----- TYPE DEFINITIONS -----
 
@@ -52,6 +52,9 @@ export interface AppState {
   planGeneratedAt?: string | null;
   planFramework?: string | null;
   planCurrency?: string | null;
+  planRevision?: number | null;
+  planUpdatedAt?: string | null;
+  activePlanId?: string | null;
   quitDate?: string | null;
   totalDuration?: number | null;
   reductionInterval?: number | null;
@@ -61,7 +64,8 @@ export interface AppState {
   consumptionHistory?: ConsumptionRecord[] | null;
   consumptionLog?: ConsumptionLog[] | null;
   isOnboardingComplete?: boolean;
-  aiSummary?: string;
+  planConfirmationPending?: boolean;
+  aiSummary?: string | null;
   goals?: any[]; // Define more specifically if possible
   logs?: any[]; // Define more specifically if possible
   preferences?: {
@@ -101,9 +105,13 @@ export const initialAppState: AppState = {
   planGeneratedAt: null,
   planFramework: null,
   planCurrency: null,
+  planRevision: 0,
+  planUpdatedAt: null,
+  activePlanId: null,
   isOnboardingComplete: false,
+  planConfirmationPending: false,
   primaryDailyTargetMg: null,
-  aiSummary: "",
+  aiSummary: null,
   goals: [],
   logs: [],
   preferences: {
@@ -115,12 +123,35 @@ export const initialAppState: AppState = {
   },
 };
 
-// (The rest of the file remains the same)
+const normalizeState = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map(normalizeState);
+  }
+  if (value && typeof value === 'object') {
+    return Object.keys(value as Record<string, unknown>)
+      .sort()
+      .reduce((acc, key) => {
+        acc[key] = normalizeState((value as Record<string, unknown>)[key]);
+        return acc;
+      }, {} as Record<string, unknown>);
+  }
+  return value;
+};
+
+const serializeState = (state: AppState): string => {
+  try {
+    return JSON.stringify(normalizeState(state));
+  } catch (error) {
+    console.warn('Failed to serialize app state for comparison', error);
+    return '';
+  }
+};
 
 interface AppContextType {
   appState: AppState;
   setAppState: React.Dispatch<React.SetStateAction<AppState>>;
   isLoading: boolean;
+  isStateLoaded: boolean;
   user: User | null;
 }
 
@@ -131,6 +162,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [isStateLoaded, setIsStateLoaded] = useState(false);
+  const stateFingerprintRef = useRef<string>(serializeState(initialAppState));
+  const lastSyncedStateRef = useRef<string>(serializeState(initialAppState));
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    stateFingerprintRef.current = serializeState(appState);
+  }, [appState]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -139,6 +177,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setIsLoading(true);
         setIsStateLoaded(false);
       } else {
+        const serializedInitial = serializeState(initialAppState);
+        stateFingerprintRef.current = serializedInitial;
+        lastSyncedStateRef.current = serializedInitial;
         setAppState(initialAppState);
         setIsLoading(false);
       }
@@ -147,43 +188,83 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, []);
 
   useEffect(() => {
-    if (user && !isStateLoaded) {
-      const loadState = async () => {
-        const docRef = doc(db, 'users', user.uid);
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+      unsubscribeRef.current = null;
+    }
+ 
+    if (!user) {
+      const serializedInitial = serializeState(initialAppState);
+      lastSyncedStateRef.current = serializedInitial;
+      stateFingerprintRef.current = serializedInitial;
+      setAppState(initialAppState);
+      setIsLoading(false);
+      setIsStateLoaded(false);
+      return;
+    }
+ 
+    setIsLoading(true);
+    setIsStateLoaded(false);
+ 
+    const docRef = doc(db, 'users', user.uid);
+ 
+    const unsubscribe = onSnapshot(
+      docRef,
+      async (docSnap) => {
         try {
-          const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
-            const loadedState = { ...initialAppState, ...docSnap.data() };
-            setAppState(loadedState);
+            const serverState = { ...initialAppState, ...docSnap.data() } as AppState;
+            const serialized = serializeState(serverState);
+            lastSyncedStateRef.current = serialized;
+            if (stateFingerprintRef.current !== serialized) {
+              setAppState(serverState);
+            }
           } else {
-            await setDoc(docRef, initialAppState); // Create initial state in DB if it doesn't exist
-            setAppState(initialAppState);
+            await setDoc(docRef, initialAppState);
+            const serialized = serializeState(initialAppState);
+            lastSyncedStateRef.current = serialized;
+            if (stateFingerprintRef.current !== serialized) {
+              setAppState(initialAppState);
+            }
           }
-        } catch (e) {
-          console.error("Failed to load state from Firestore", e);
-          setAppState(initialAppState);
+        } catch (error) {
+          console.error('Failed to process state snapshot from Firestore', error);
         } finally {
           setIsLoading(false);
           setIsStateLoaded(true);
         }
-      };
-      loadState();
-    } else if (!user) {
+      },
+      (error) => {
+        console.error('Failed to subscribe to state changes in Firestore', error);
         setIsLoading(false);
-    }
-  }, [user, isStateLoaded]);
+        setIsStateLoaded(true);
+      },
+    );
+ 
+    unsubscribeRef.current = unsubscribe;
+ 
+    return () => {
+      unsubscribe();
+      unsubscribeRef.current = null;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!isLoading && user && isStateLoaded) {
-      const saveState = async () => {
+      const persistState = async () => {
+        const serialized = serializeState(appState);
+        if (serialized === lastSyncedStateRef.current) {
+          return;
+        }
         const docRef = doc(db, 'users', user.uid);
         try {
           await setDoc(docRef, appState, { merge: true });
+          lastSyncedStateRef.current = serialized;
         } catch (e) {
-          console.error("Failed to save state to Firestore", e);
+          console.warn("Failed to save state to Firestore", e);
         }
       };
-      saveState();
+      void persistState();
     }
   }, [appState, user, isLoading, isStateLoaded]);
 
@@ -191,6 +272,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     appState,
     setAppState,
     isLoading,
+    isStateLoaded,
     user,
   };
 

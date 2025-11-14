@@ -20,7 +20,7 @@ export default function WelcomeScreen() {
           style={styles.illustration}
         />
         <ThemedText type="title" style={styles.title}>
-          Let's create your personalized plan
+          {`Let\u2019s create your personalized plan`}
         </ThemedText>
         <ThemedText style={styles.subtitle}>
           This short questionnaire will help create a tailored plan to help you quit successfully.

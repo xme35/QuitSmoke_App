@@ -72,23 +72,30 @@ export default function SuccessScreen() {
   ]);
 
   const handleFinish = async () => {
-    await setOnboardingStatus(true, user?.uid);
-    setAppState((prev) => ({
-      ...prev,
-      isOnboardingComplete: true,
-    }));
-    
-    // Garantir que o Firestore é atualizado explicitamente
-    if (user) {
-      try {
+    try {
+      await setOnboardingStatus(true, user?.uid);
+      setAppState(prev => ({
+        ...prev,
+        isOnboardingComplete: true,
+        planConfirmationPending: false,
+      }));
+
+      if (user) {
         const docRef = doc(db, 'users', user.uid);
-        await setDoc(docRef, { isOnboardingComplete: true }, { merge: true });
-      } catch (error) {
-        console.error('Failed to update onboarding status in Firestore', error);
+        await setDoc(
+          docRef,
+          {
+            isOnboardingComplete: true,
+            planConfirmationPending: false,
+          },
+          { merge: true },
+        );
       }
+
+      router.replace('/(tabs)/dashboard' as any);
+    } catch (error) {
+      console.error('Failed to complete onboarding confirmation', error);
     }
-    
-    router.replace('/(tabs)/dashboard' as any);
   };
 
   return (
@@ -110,7 +117,7 @@ export default function SuccessScreen() {
             Your Plan is Ready
           </ThemedText>
           <ThemedText style={styles.description}>
-            You're about to start a life-changing journey to become nicotine-free
+            {`You\u2019re about to start a life-changing journey to become nicotine-free`}
           </ThemedText>
         </View>
 

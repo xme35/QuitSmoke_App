@@ -1,12 +1,11 @@
 import { ThemedText } from '../../components/themed-text';
 import { ThemedView } from '../../components/themed-view';
 import { StyleSheet, View, TouchableOpacity, Dimensions, useColorScheme, ScrollView, Animated, Platform } from 'react-native';
-import { AppState, initialAppState, useAppContext } from '../../context/AppContext';
+import { AppState, ConsumptionLog, initialAppState, useAppContext } from '../../context/AppContext';
 import { Colors } from '../../constants/theme';
 import { FontAwesome5 } from '@expo/vector-icons';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { useMemo, useRef } from 'react';
-import { ConsumptionLog } from '../../context/AppContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -97,6 +96,26 @@ const getProgressStatus = (percentage: number) => {
 
 export default function DashboardScreen() {
   const { appState, setAppState } = useAppContext();
+  const {
+    consumptionLog: rawConsumptionLog,
+    preferences,
+    taperingSchedule: rawTaperingSchedule,
+    planStartDate,
+    initialIntake,
+    cigarettes,
+    vapes,
+    heatedTobacco,
+    nicotinePouches,
+    primaryDailyTargetMg,
+  } = appState;
+  const consumptionLog = useMemo(
+    () => (Array.isArray(rawConsumptionLog) ? rawConsumptionLog : []),
+    [rawConsumptionLog],
+  );
+  const taperingSchedule = useMemo(
+    () => (Array.isArray(rawTaperingSchedule) ? rawTaperingSchedule : []),
+    [rawTaperingSchedule],
+  );
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
@@ -110,10 +129,9 @@ export default function DashboardScreen() {
     currentConsumption,
     consumptionCounts,
   } = useMemo(() => {
-    const preferences = appState.preferences;
-    const schedule = appState.taperingSchedule ?? [];
+    const schedule = taperingSchedule;
     const hasSchedule = schedule.length > 0;
-    const planStartDateIso = appState.planStartDate;
+    const planStartDateIso = planStartDate;
 
     const resolveGoalFromSchedule = (): number | null => {
       if (!hasSchedule) {
@@ -170,8 +188,8 @@ export default function DashboardScreen() {
     };
 
     const scheduleGoal = resolveGoalFromSchedule();
-    const fallbackPrimaryGoal = Number.isFinite(appState.primaryDailyTargetMg ?? NaN)
-      ? Number(appState.primaryDailyTargetMg)
+    const fallbackPrimaryGoal = Number.isFinite(primaryDailyTargetMg ?? NaN)
+      ? Number(primaryDailyTargetMg)
       : null;
     const schedulePrimaryTarget = schedule.length
       ? (() => {
@@ -183,10 +201,16 @@ export default function DashboardScreen() {
           return Number(firstPhase.nicotineGoalMg ?? null);
         })()
       : null;
-    const initialFallback = Number.isFinite(appState.initialIntake ?? NaN)
-      ? Number(appState.initialIntake)
-      : null;
-    const computedBaseline = computeBaselineIntake(appState);
+    const initialFallback = Number.isFinite(initialIntake ?? NaN) ? Number(initialIntake) : null;
+    const baselineSource: AppState = {
+      ...initialAppState,
+      preferences: preferences ?? initialAppState.preferences,
+      cigarettes,
+      vapes,
+      heatedTobacco,
+      nicotinePouches,
+    };
+    const computedBaseline = computeBaselineIntake(baselineSource);
     const baselineIntake = Number.isFinite(computedBaseline) && computedBaseline > 0 ? computedBaseline : null;
 
     let dailyGoal =
@@ -201,7 +225,7 @@ export default function DashboardScreen() {
       dailyGoal = 0;
     }
 
-    const todaysConsumptions = (appState.consumptionLog || []).filter(log => isToday(new Date(log.timestamp)));
+    const todaysConsumptions = consumptionLog.filter(log => isToday(new Date(log.timestamp)));
 
     const consumptionCounts = {
       Cigarette: 0,
@@ -245,18 +269,19 @@ export default function DashboardScreen() {
       consumptionCounts,
     };
   }, [
-    appState.consumptionLog,
-    appState.preferences,
-    appState.taperingSchedule,
-    appState.planStartDate,
-    appState.initialIntake,
-    appState.cigarettes,
-    appState.vapes,
-    appState.heatedTobacco,
-    appState.nicotinePouches,
+    consumptionLog,
+    preferences,
+    taperingSchedule,
+    planStartDate,
+    initialIntake,
+    cigarettes,
+    vapes,
+    heatedTobacco,
+    nicotinePouches,
+    primaryDailyTargetMg,
   ]);
 
-  const baselineIntakeFromUsage = baselineIntake ?? 0;
+ const baselineIntakeFromUsage = baselineIntake ?? 0;
   const displayDailyGoal =
     dailyGoal > 0
       ? dailyGoal
@@ -389,7 +414,7 @@ export default function DashboardScreen() {
         <View style={styles.logsSection}>
           <View style={styles.logsSectionHeader}>
             <ThemedText style={styles.logsSectionTitle}>Recent Activity</ThemedText>
-            {(appState.consumptionLog || []).length > 3 && (
+            {consumptionLog.length > 3 && (
               <TouchableOpacity 
                 onPress={() => router.push('/activity-logs' as any)}
                 accessibilityLabel="View all activity logs"
@@ -400,7 +425,7 @@ export default function DashboardScreen() {
             )}
           </View>
           
-          {(appState.consumptionLog || []).length === 0 ? (
+          {consumptionLog.length === 0 ? (
             <View style={[styles.emptyLogsContainer, { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }]}>
               <FontAwesome5 name="clipboard-list" size={48} color={themeColors.icon} style={{ opacity: 0.3, marginBottom: SPACING.md }} />
               <ThemedText style={styles.emptyLogsText}>No activity logged yet</ThemedText>
@@ -410,7 +435,7 @@ export default function DashboardScreen() {
             </View>
           ) : (
             <View style={styles.logsContainer}>
-              {(appState.consumptionLog || [])
+              {consumptionLog
                 .map((log, index) => ({ log, index }))
                 .slice(-3)
                 .reverse()

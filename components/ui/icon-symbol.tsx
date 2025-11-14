@@ -1,5 +1,4 @@
 import { StyleProp, Text, TextStyle } from 'react-native';
-import { ComponentProps } from 'react';
 
 const map = {
     'house.fill': '\u{1F3E0}',
