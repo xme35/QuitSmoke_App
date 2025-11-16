@@ -68,6 +68,7 @@ export interface AppState {
   aiSummary?: string | null;
   goals?: any[]; // Define more specifically if possible
   logs?: any[]; // Define more specifically if possible
+  notificationsEnabled?: boolean;
   preferences?: {
     nicotineStrengthMgPerMl: number;
     vapePuffsPerPod: number;
@@ -114,12 +115,13 @@ export const initialAppState: AppState = {
   aiSummary: null,
   goals: [],
   logs: [],
+  notificationsEnabled: false,
   preferences: {
-    nicotineStrengthMgPerMl: 3,
+    nicotineStrengthMgPerMl: 25,
     vapePuffsPerPod: 500,
     nicotineStrengthMgPerCigarette: 12,
     nicotineStrengthMgPerHeatedTobacco: 6,
-    nicotineStrengthMgPerPouch: 21,
+    nicotineStrengthMgPerPouch: 8,
   },
 };
 

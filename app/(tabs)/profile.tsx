@@ -1,6 +1,6 @@
 
-import React, { useState, useMemo } from 'react';
-import { StyleSheet, View, ScrollView, TouchableOpacity, Modal, TextInput, Switch, Alert, useColorScheme } from 'react-native';
+import React, { useState, useMemo, useEffect } from 'react';
+import { StyleSheet, View, ScrollView, TouchableOpacity, Modal, TextInput, Alert, useColorScheme, Pressable } from 'react-native';
 import { ThemedText } from '../../components/themed-text';
 import { ThemedView } from '../../components/themed-view';
 import { useAppContext, TaperingPhase, initialAppState } from '../../context/AppContext';
@@ -116,15 +116,30 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ visible, onclose,
     );
 };
 
+const SimpleToggle: React.FC<{ value: boolean; onValueChange: (value: boolean) => void; activeColor: string; inactiveColor: string }> = ({ value, onValueChange, activeColor, inactiveColor }) => {
+    return (
+        <Pressable
+            onPress={() => onValueChange(!value)}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: value }}
+        >
+            <View style={[styles.toggleTrack, { backgroundColor: value ? activeColor : inactiveColor }]}>
+                <View style={[styles.toggleThumb, { marginLeft: value ? 24 : 2 }]} />
+            </View>
+        </Pressable>
+    );
+};
+
 
 export default function ProfileScreen() {
     const { appState, setAppState, user } = useAppContext();
     const router = useRouter();
     const colorScheme = useColorScheme() ?? 'light';
     const themeColors = Colors[colorScheme];
-    const { planStartDate, totalDuration, taperingSchedule, initialIntake } = appState;
+    const { planStartDate, totalDuration, taperingSchedule, initialIntake, notificationsEnabled } = appState;
 
-    const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+    const inactiveToggleColor = colorScheme === 'light' ? '#E5E7EB' : '#374151';
+    const activeToggleColor = themeColors.tint;
     const [newPlanModalVisible, setNewPlanModalVisible] = useState(false);
     const [deleteModalVisible, setDeleteModalVisible] = useState(false);
     const [newPlanConfirmation, setNewPlanConfirmation] = useState('');
@@ -144,10 +159,12 @@ export default function ProfileScreen() {
 
     const handleLogout = async () => {
         try {
-            setAppState(initialAppState);
+            // Sign out first, then clear state to prevent navigation timing issues
             await clearLoginStatus();
+            await clearOnboardingStatus(user?.uid);
             await signOut(auth);
-            router.replace('/(auth)/sign-in' as any);
+            setAppState(initialAppState);
+            // Navigation handled automatically by _layout.tsx
         } catch (error) {
             console.error("Error signing out: ", error);
             Alert.alert('Error', 'Could not log out. Please try again.');
@@ -156,16 +173,17 @@ export default function ProfileScreen() {
 
     const handleResetPlan = async () => {
         if (newPlanConfirmation.toLowerCase() === 'new plan') {
-            // Reset app state to initial but keep user name
+            // Reset app state to initial but keep user name and notifications
             setAppState(prevState => ({
                 ...initialAppState,
                 name: prevState.name,
+                notificationsEnabled: prevState.notificationsEnabled,
             }));
             // Clear onboarding status to show onboarding flow again
             await setOnboardingStatus(false, user?.uid);
             setNewPlanModalVisible(false);
             setNewPlanConfirmation('');
-            router.replace('/(onboarding)/welcome' as any);
+            // Navigation to onboarding handled automatically by _layout.tsx
         } else {
             Alert.alert('Incorrect Confirmation', 'Please type \u201cnew plan\u201d to confirm.');
         }
@@ -176,11 +194,12 @@ export default function ProfileScreen() {
             try {
                 setDeleteModalVisible(false);
                 setDeleteConfirmation('');
-                setAppState(initialAppState);
+                // Sign out first, then clear state to prevent navigation timing issues
                 await clearLoginStatus();
                 await clearOnboardingStatus(user?.uid);
                 await signOut(auth);
-                router.replace('/(auth)/sign-in' as any);
+                setAppState(initialAppState);
+                // Navigation handled automatically by _layout.tsx
                 Alert.alert('Account Deleted', 'Your account has been permanently deleted.');
             } catch (error) {
                 console.error("Error deleting account: ", error);
@@ -248,22 +267,22 @@ export default function ProfileScreen() {
                 <View style={styles.settingRow}>
                     <FontAwesome5 name="bell" size={16} color={themeColors.icon} />
                     <ThemedText style={styles.settingLabel}>Enable Notifications</ThemedText>
-                    <Switch
-                        trackColor={{ false: "#767577", true: themeColors.tint }}
-                        thumbColor={notificationsEnabled ? themeColors.tint : "#f4f3f4"}
-                        onValueChange={() => setNotificationsEnabled(previousState => !previousState)}
-                        value={notificationsEnabled}
+                    <SimpleToggle
+                        value={notificationsEnabled ?? false}
+                        onValueChange={(value) => setAppState(prev => ({ ...prev, notificationsEnabled: value }))}
+                        activeColor={activeToggleColor}
+                        inactiveColor={inactiveToggleColor}
                     />
                 </View>
             </ThemedView>
 
             <ThemedView style={cardStyle}>
                 <ThemedText style={styles.sectionTitle}>Legal</ThemedText>
-                <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/privacy')}>
+                <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/(tabs)/privacy')}>
                     <FontAwesome5 name="shield-alt" size={16} color={themeColors.icon} />
                     <ThemedText style={[styles.actionButtonText, {color: themeColors.icon}]}>Privacy Policy</ThemedText>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionButton, {marginTop: 10}]} onPress={() => router.push('/terms')}>
+                <TouchableOpacity style={[styles.actionButton, {marginTop: 10}]} onPress={() => router.push('/(tabs)/terms')}>
                     <FontAwesome5 name="file-contract" size={16} color={themeColors.icon} />
                     <ThemedText style={[styles.actionButtonText, {color: themeColors.icon}]}>Terms of Service</ThemedText>
                 </TouchableOpacity>
@@ -304,6 +323,19 @@ const styles = StyleSheet.create({
     actionButtonText: { fontSize: 16, marginLeft: 10 },
     settingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
     settingLabel: { fontSize: 16, flex: 1, marginLeft: 10 },
+    toggleTrack: {
+        width: 50,
+        height: 28,
+        borderRadius: 14,
+        padding: 2,
+        justifyContent: 'center',
+    },
+    toggleThumb: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: '#FFFFFF',
+    },
     modalContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
     modalView: { margin: 20, borderRadius: 20, padding: 35, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 5, width: '90%' },
     modalTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 15 },

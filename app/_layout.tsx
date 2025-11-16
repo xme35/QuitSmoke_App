@@ -1,7 +1,5 @@
-
 import { useEffect, useRef, useState } from 'react';
-import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
-import type { Href } from 'expo-router';
+import { Stack, useRootNavigationState } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppProvider, useAppContext } from '../context/AppContext';
 import { AuthProvider, useAuth } from '../context/AuthContext';
@@ -11,18 +9,10 @@ import { getOnboardingStatus, setOnboardingStatus, clearOnboardingStatus } from 
 
 SplashScreen.preventAutoHideAsync();
 
-const AUTH_ROUTE: Href = '/(auth)/sign-in';
-const ONBOARDING_ROUTE: Href = '/(onboarding)/welcome';
-const DASHBOARD_ROUTE: Href = '/(tabs)/dashboard';
-const PUBLIC_ROUTES = new Set(['privacy', 'terms']);
-
 const RootNavigator = () => {
   const { user, isLoading, appState, isStateLoaded } = useAppContext();
   const { isAuthReady } = useAuth();
-  const router = useRouter();
-  const segments = useSegments();
   const rootNavigationState = useRootNavigationState();
-  const pendingGroupRef = useRef<string | null>(null);
   const [hasCheckedLoginStatus, setHasCheckedLoginStatus] = useState(false);
   const [hasCheckedOnboardingStatus, setHasCheckedOnboardingStatus] = useState(false);
   const [storedLoginStatus, setStoredLoginStatus] = useState(false);
@@ -76,10 +66,8 @@ const RootNavigator = () => {
     setHasCheckedOnboardingStatus(false);
 
     const loadOnboardingStatus = async () => {
-      console.log('[Onboarding] Loading status for uid', user?.uid ?? 'anonymous');
       try {
         const status = await getOnboardingStatus(user?.uid ?? null);
-        console.log('[Onboarding] Storage returned', status);
         if (isMounted) {
           setStoredOnboardingStatus(status);
         }
@@ -148,119 +136,6 @@ const RootNavigator = () => {
 
   useEffect(() => {
     if (
-      isLoading ||
-      !isAuthReady ||
-      !hasCheckedLoginStatus ||
-      !hasCheckedOnboardingStatus ||
-      !rootNavigationState ||
-      (user && !isStateLoaded)
-    ) {
-      return;
-    }
-
-    console.log('[Onboarding] current segments', segments);
-
-    const onboardingResolved = storedOnboardingStatus || planResolved;
-    console.log('[Onboarding] routing evaluation', {
-      hasUser: Boolean(user),
-      storedOnboardingStatus,
-      onboardingComplete,
-      hasPlanData,
-      confirmationPending,
-      planResolved,
-      onboardingResolved,
-      storedLoginStatus,
-      navigationReady,
-    });
-
-    let targetGroup: string | null = null;
-    let targetRoute: Href | null = null;
-
-    if (user) {
-      if (!onboardingResolved) {
-        console.log('[Onboarding] Redirecting authenticated user to onboarding flow');
-        targetGroup = '(onboarding)';
-        targetRoute = ONBOARDING_ROUTE;
-      } else {
-        console.log('[Onboarding] Redirecting authenticated user to tabs flow');
-        targetGroup = '(tabs)';
-        targetRoute = DASHBOARD_ROUTE;
-      }
-    } else if (!storedLoginStatus) {
-      console.log('[Onboarding] No stored login status, sending to auth');
-      targetGroup = '(auth)';
-      targetRoute = AUTH_ROUTE;
-    } else if (!onboardingResolved) {
-      console.log('[Onboarding] Logged out but onboarding incomplete, sending to onboarding');
-      targetGroup = '(onboarding)';
-      targetRoute = ONBOARDING_ROUTE;
-    } else {
-      console.log('[Onboarding] Logged out with stored flag but no session, sending to auth');
-      targetGroup = '(auth)';
-      targetRoute = AUTH_ROUTE;
-    }
-
-    const currentGroup = segments[0];
-    const navigationMounted = rootNavigationState?.key != null;
-
-    if (currentGroup && PUBLIC_ROUTES.has(currentGroup)) {
-      if (navigationMounted) {
-        if (pendingGroupRef.current) {
-          pendingGroupRef.current = null;
-        }
-        if (!navigationReady) {
-          setNavigationReady(true);
-        }
-      }
-      return;
-    }
-
-    if (targetGroup && targetRoute && currentGroup !== targetGroup) {
-      if (!navigationMounted) {
-        return;
-      }
-      if (navigationReady) {
-        setNavigationReady(false);
-      }
-      pendingGroupRef.current = targetGroup;
-      console.log('[Onboarding] Executing router.replace to', targetRoute);
-      router.replace(targetRoute);
-      return;
-    }
-
-    if (navigationMounted) {
-      if (pendingGroupRef.current) {
-        if (segments[0] === pendingGroupRef.current) {
-          pendingGroupRef.current = null;
-          if (!navigationReady) {
-            setNavigationReady(true);
-          }
-        }
-      } else if (!navigationReady) {
-        setNavigationReady(true);
-      }
-    }
-  }, [
-    user,
-    onboardingComplete,
-    hasPlanData,
-    confirmationPending,
-    planResolved,
-    isLoading,
-    segments,
-    router,
-    hasCheckedLoginStatus,
-    storedLoginStatus,
-    navigationReady,
-    storedOnboardingStatus,
-    hasCheckedOnboardingStatus,
-    rootNavigationState,
-    isAuthReady,
-    isStateLoaded,
-  ]);
-
-  useEffect(() => {
-    if (
       user ||
       !isAuthReady ||
       !isStateLoaded ||
@@ -309,6 +184,29 @@ const RootNavigator = () => {
   }, [isLoading, navigationReady]);
 
   useEffect(() => {
+    const shouldBeReady =
+      !isLoading &&
+      isAuthReady &&
+      hasCheckedLoginStatus &&
+      hasCheckedOnboardingStatus &&
+      rootNavigationState?.key != null &&
+      (!user || isStateLoaded);
+
+    if (shouldBeReady && !navigationReady) {
+      setNavigationReady(true);
+    }
+  }, [
+    isLoading,
+    isAuthReady,
+    hasCheckedLoginStatus,
+    hasCheckedOnboardingStatus,
+    rootNavigationState,
+    user,
+    isStateLoaded,
+    navigationReady,
+  ]);
+
+  useEffect(() => {
     if (navigationReady && !hasHiddenSplash) {
       const hideSplash = async () => {
         try {
@@ -324,13 +222,7 @@ const RootNavigator = () => {
     }
   }, [navigationReady, hasHiddenSplash]);
 
-  if (
-    isLoading ||
-    !isAuthReady ||
-    !hasCheckedLoginStatus ||
-    !hasCheckedOnboardingStatus ||
-    !navigationReady
-  ) {
+  if (!navigationReady) {
     return null;
   }
 
@@ -339,9 +231,8 @@ const RootNavigator = () => {
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(onboarding)" />
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="activity-logs" />
       <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-      <Stack.Screen name="privacy" />
-      <Stack.Screen name="terms" />
     </Stack>
   );
 };

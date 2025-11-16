@@ -1,18 +1,33 @@
-
 import React from 'react';
-import { StyleSheet, ScrollView, View, Text } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { ThemedText } from '../components/themed-text';
+import { StyleSheet, ScrollView, View, Text, TouchableOpacity, useColorScheme } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ThemedText } from '../../components/themed-text';
+import { ThemedView } from '../../components/themed-view';
+import { useRouter } from 'expo-router';
+import { FontAwesome5 } from '@expo/vector-icons';
+import { Colors } from '../../constants/theme';
 
 const PrivacyPolicyScreen = () => {
+    const router = useRouter();
+    const insets = useSafeAreaInsets();
+    const colorScheme = useColorScheme() ?? 'light';
+    const themeColors = Colors[colorScheme];
+
     return (
-        <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <ThemedView style={{ flex: 1 }}>
+            <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+                <TouchableOpacity onPress={() => router.push('/(tabs)/profile')} style={styles.backButton}>
+                    <FontAwesome5 name="arrow-left" size={20} color={themeColors.tint} />
+                </TouchableOpacity>
+                <ThemedText style={styles.headerTitle}>Privacy Policy</ThemedText>
+                <View style={{ width: 40 }} />
+            </View>
+
             <ScrollView
                 style={styles.container}
-                contentContainerStyle={styles.contentContainer}
+                contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom + 20 }]}
                 showsVerticalScrollIndicator={false}
             >
-            <ThemedText style={styles.title}>Privacy Policy</ThemedText>
             <Text style={styles.lastUpdated}>Last updated: October 28, 2023</Text>
 
             <View style={styles.section}>
@@ -63,27 +78,36 @@ const PrivacyPolicyScreen = () => {
                 <Text style={styles.paragraph}>If you have any questions about this Privacy Policy, please contact us at: support@quitnicotine.app</Text>
             </View>
             </ScrollView>
-        </SafeAreaView>
+        </ThemedView>
     );
 };
 
 const styles = StyleSheet.create({
-    safeArea: {
-        flex: 1,
-        backgroundColor: '#fff',
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 24,
+        paddingBottom: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+    },
+    backButton: {
+        width: 40,
+        height: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    headerTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
     },
     container: {
         flex: 1,
     },
     contentContainer: {
         paddingHorizontal: 28,
-        paddingTop: 52,
-        paddingBottom: 64,
-    },
-    title: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        marginBottom: 16,
+        paddingTop: 20,
     },
     lastUpdated: {
         fontSize: 14,

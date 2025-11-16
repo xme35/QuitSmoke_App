@@ -1,22 +1,40 @@
+import { FontAwesome5 } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
+import { Platform, ScrollView, StyleSheet, TouchableOpacity, useColorScheme, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '../components/themed-text';
 import { ThemedView } from '../components/themed-view';
-import { StyleSheet, View, ScrollView, useColorScheme, TouchableOpacity, Platform } from 'react-native';
-import { useAppContext } from '../context/AppContext';
 import { Colors } from '../constants/theme';
-import { FontAwesome5 } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import { ConsumptionLog, useAppContext } from '../context/AppContext';
+
+const SPACING = {
+  xs: 4,
+  sm: 8,
+  md: 16,
+  lg: 24,
+  xl: 32,
+  xxl: 48,
+};
 
 const isToday = (someDate: Date) => {
   const today = new Date();
   return someDate.getDate() === today.getDate() &&
          someDate.getMonth() === today.getMonth() &&
          someDate.getFullYear() === today.getFullYear();
-}
+};
+
+const isYesterday = (someDate: Date) => {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  return someDate.getDate() === yesterday.getDate() &&
+         someDate.getMonth() === yesterday.getMonth() &&
+         someDate.getFullYear() === yesterday.getFullYear();
+};
 
 export default function ActivityLogsScreen() {
   const { appState, setAppState } = useAppContext();
+  const { consumptionLog = [] } = appState;
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
@@ -27,141 +45,205 @@ export default function ActivityLogsScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
 
-    const reversedIndex = (appState.consumptionLog?.length || 0) - 1 - index;
     setAppState(prevState => ({
       ...prevState,
-      consumptionLog: prevState.consumptionLog?.filter((_, i) => i !== reversedIndex) || [],
+      consumptionLog: prevState.consumptionLog?.filter((_, i) => i !== index) || [],
     }));
   };
 
+  const groupedLogs = consumptionLog.reduce((groups, log, index) => {
+    const logDate = new Date(log.timestamp);
+    let dateKey: string;
+
+    if (isToday(logDate)) {
+      dateKey = 'Today';
+    } else if (isYesterday(logDate)) {
+      dateKey = 'Yesterday';
+    } else {
+      dateKey = logDate.toLocaleDateString([], { 
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    }
+
+    if (!groups[dateKey]) {
+      groups[dateKey] = [];
+    }
+    groups[dateKey].push({ log, index });
+    return groups;
+  }, {} as Record<string, Array<{ log: ConsumptionLog; index: number }>>);
+
   return (
     <ThemedView style={{ flex: 1 }}>
-      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <FontAwesome5 name="arrow-left" size={20} color={themeColors.tint} />
+      <View style={[styles.header, { paddingTop: insets.top + SPACING.md }]}>
+        <TouchableOpacity
+          onPress={() => {
+            if (Platform.OS !== 'web') {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }
+            router.back();
+          }}
+          style={styles.backButton}
+          accessibilityLabel="Go back"
+          accessibilityRole="button"
+        >
+          <FontAwesome5 name="arrow-left" size={20} color={themeColors.text} />
         </TouchableOpacity>
         <ThemedText style={styles.headerTitle}>Activity Logs</ThemedText>
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView 
+      <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + 20 }]}
+        contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + SPACING.xl }]}
         showsVerticalScrollIndicator={false}
       >
-        {(appState.consumptionLog || []).length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <FontAwesome5 name="clipboard-list" size={60} color={themeColors.tint} style={{ opacity: 0.3 }} />
+        {consumptionLog.length === 0 ? (
+          <View style={[styles.emptyContainer, { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }]}>
+            <FontAwesome5 name="clipboard-list" size={64} color={themeColors.icon} style={{ opacity: 0.3, marginBottom: SPACING.lg }} />
             <ThemedText style={styles.emptyText}>No activity logged yet</ThemedText>
-            <ThemedText style={styles.emptySubtext}>
+            <ThemedText style={[styles.emptySubtext, { opacity: 0.5 }]}>
               Start tracking your nicotine consumption from the dashboard
             </ThemedText>
           </View>
         ) : (
-          <View style={styles.logsContainer}>
-            {[...(appState.consumptionLog || [])]
-              .reverse()
-              .map((log, index) => {
-                const logDate = new Date(log.timestamp);
-                const timeStr = logDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                const dateStr = isToday(logDate)
-                  ? 'Today'
-                  : logDate.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
-                
-                return (
-                  <View
-                    key={`${log.timestamp}-${index}`}
-                    style={[
-                      styles.logItem,
-                      { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }
-                    ]}
-                  >
-                    <View style={[styles.logIconContainer, { backgroundColor: colorScheme === 'dark' ? 'rgba(0, 122, 255, 0.15)' : 'rgba(0, 122, 255, 0.1)' }]}>
-                      <FontAwesome5
-                        name={
-                          log.product === 'Cigarette' ? 'smoking' :
-                          log.product === 'Vape (Puff)' ? 'wind' :
-                          log.product === 'Heated Tobacco' ? 'fire-alt' :
-                          'grip-lines'
-                        }
-                        size={18}
-                        color={themeColors.tint}
-                      />
-                    </View>
-                    <View style={styles.logTextContainer}>
-                      <ThemedText style={styles.logProduct}>{log.product}</ThemedText>
-                      <ThemedText style={styles.logTime}>{dateStr} at {timeStr}</ThemedText>
-                    </View>
-                    <TouchableOpacity
-                      onPress={() => handleDeleteLog(index)}
-                      accessibilityLabel="Delete log entry"
-                      accessibilityRole="button"
-                      style={styles.deleteIconButton}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <FontAwesome5 name="times-circle" size={20} color={themeColors.icon} style={{ opacity: 0.5 }} />
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
-          </View>
+          Object.entries(groupedLogs)
+            .reverse()
+            .map(([dateKey, logs]) => (
+              <View key={dateKey} style={styles.dateGroup}>
+                <ThemedText style={styles.dateHeader}>{dateKey}</ThemedText>
+                <View style={styles.logsContainer}>
+                  {logs.reverse().map(({ log, index }) => (
+                    <LogItem
+                      key={`${log.timestamp}-${index}`}
+                      log={log}
+                      onDelete={() => handleDeleteLog(index)}
+                      colorScheme={colorScheme}
+                      themeColors={themeColors}
+                    />
+                  ))}
+                </View>
+              </View>
+            ))
         )}
       </ScrollView>
     </ThemedView>
   );
 }
 
+const LogItem = ({
+  log,
+  onDelete,
+  colorScheme,
+  themeColors
+}: {
+  log: ConsumptionLog;
+  onDelete: () => void;
+  colorScheme: 'light' | 'dark';
+  themeColors: any;
+}) => {
+  const logDate = new Date(log.timestamp);
+  const timeStr = logDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  return (
+    <View
+      style={[
+        styles.logItem,
+        { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }
+      ]}
+    >
+      <View style={[styles.logIconContainer, { backgroundColor: `${themeColors.tint}15` }]}>
+        <FontAwesome5
+          name={
+            log.product === 'Cigarette' ? 'smoking' :
+            log.product === 'Vape (Puff)' ? 'wind' :
+            log.product === 'Heated Tobacco' ? 'fire-alt' :
+            'grip-lines'
+          }
+          size={20}
+          color={themeColors.tint}
+        />
+      </View>
+      <View style={styles.logTextContainer}>
+        <ThemedText style={styles.logProduct}>{log.product}</ThemedText>
+        <ThemedText style={styles.logTime}>{timeStr}</ThemedText>
+      </View>
+      <TouchableOpacity
+        onPress={onDelete}
+        accessibilityLabel="Delete log entry"
+        accessibilityRole="button"
+        style={styles.deleteIconButton}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <FontAwesome5 name="trash-alt" size={18} color="#EF4444" />
+      </TouchableOpacity>
+    </View>
+  );
+};
+
 const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+    paddingHorizontal: SPACING.lg,
+    paddingBottom: SPACING.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
   },
   backButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: SPACING.sm,
+    marginLeft: -SPACING.sm,
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   container: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.lg,
   },
   emptyContainer: {
-    flex: 1,
+    padding: SPACING.xxl,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
-    gap: 12,
+    borderRadius: 16,
+    marginTop: SPACING.xxl,
   },
   emptyText: {
     fontSize: 18,
     fontWeight: '600',
-    marginTop: 16,
+    opacity: 0.6,
   },
   emptySubtext: {
     fontSize: 14,
-    opacity: 0.6,
+    marginTop: SPACING.sm,
     textAlign: 'center',
-    paddingHorizontal: 40,
+  },
+  dateGroup: {
+    marginBottom: SPACING.xl,
+  },
+  dateHeader: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: SPACING.md,
+    opacity: 0.6,
   },
   logsContainer: {
-    gap: 12,
+    gap: SPACING.sm,
   },
   logItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 16,
-    gap: 14,
+    padding: SPACING.md,
+    borderRadius: 14,
+    gap: SPACING.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   logIconContainer: {
     width: 44,
@@ -180,10 +262,10 @@ const styles = StyleSheet.create({
   logTime: {
     fontSize: 14,
     opacity: 0.6,
-    marginTop: 4,
+    marginTop: 2,
   },
   deleteIconButton: {
-    padding: 8,
-    marginLeft: 4,
+    padding: SPACING.sm,
+    marginRight: -SPACING.xs,
   },
 });

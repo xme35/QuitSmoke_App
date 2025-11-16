@@ -83,9 +83,9 @@ export function formatLifeTimeGained(years: number): string {
     return `${roundedYears} ${roundedYears === 1 ? 'year' : 'years'}`;
   }
 
-  // Display both years and months
-  const yearText = `${wholeYears} ${wholeYears === 1 ? 'year' : 'years'}`;
-  const monthText = `${months} ${months === 1 ? 'month' : 'months'}`;
+  // Display both years and months on separate lines with comma after years
+  const yearText = `${wholeYears}\u00A0${wholeYears === 1 ? 'year' : 'years'},`;
+  const monthText = `${months}\u00A0${months === 1 ? 'month' : 'months'}`;
   
-  return `${yearText}, ${monthText}`;
+  return `${yearText}\n${monthText}`;
 }

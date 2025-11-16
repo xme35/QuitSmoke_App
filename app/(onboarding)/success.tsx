@@ -92,7 +92,7 @@ export default function SuccessScreen() {
         );
       }
 
-      router.replace('/(tabs)/dashboard' as any);
+      // Navigation handled automatically by (auth)/_layout.tsx which detects isOnboardingComplete
     } catch (error) {
       console.error('Failed to complete onboarding confirmation', error);
     }

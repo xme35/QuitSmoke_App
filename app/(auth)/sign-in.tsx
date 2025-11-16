@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useRouter } from 'expo-router';
@@ -27,11 +28,9 @@ const SignIn = () => {
   const handleSignIn = async () => {
     setErrorMessage('');
     try {
-      const credentials = await signInWithEmailAndPassword(auth, email.trim(), password);
+      await signInWithEmailAndPassword(auth, email.trim(), password);
       await setLoginStatus(true);
-      const onboardingComplete = await getOnboardingStatus(credentials.user.uid);
-      const nextRoute = onboardingComplete ? '/(tabs)/dashboard' : '/(onboarding)/welcome';
-      router.replace(nextRoute);
+      // Navigation handled automatically by (auth)/_layout.tsx
     } catch (error: any) {
       if (
         error?.code === 'auth/invalid-credential' ||
@@ -50,13 +49,14 @@ const SignIn = () => {
   };
 
   return (
-    <ThemedView style={[styles.container, { backgroundColor: palette.background }]}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        scrollIndicatorInsets={{ right: -12 }}
-        keyboardShouldPersistTaps="handled"
-      >
+    <SafeAreaView style={{ flex: 1, backgroundColor: palette.background }} edges={['top']}>
+      <ThemedView style={[styles.container, { backgroundColor: palette.background }]}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
         <View style={styles.header}>
           <HappyLungsIllustration size={160} style={styles.illustration} />
           <ThemedText type="title" style={styles.title}>
@@ -140,8 +140,9 @@ const SignIn = () => {
             <Text style={[styles.linkHighlight, { color: palette.tint }]}>Sign up</Text>
           </Text>
         </Pressable>
-      </ScrollView>
-    </ThemedView>
+        </ScrollView>
+      </ThemedView>
+    </SafeAreaView>
   );
 };
 
@@ -149,10 +150,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 24,
-    paddingVertical: 32,
+    paddingTop: 16,
+    paddingBottom: 32,
   },
   scrollView: {
-    marginRight: -16,
+    flex: 1,
   },
   scrollContent: {
     flexGrow: 1,

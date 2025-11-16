@@ -66,6 +66,26 @@ const computeBaselineIntake = (state: AppState): number => {
   return Math.max(0, Math.round(total));
 };
 
+// Function to get nicotine amount based on product and user preferences
+const getNicotineAmount = (product: string, preferences: any): number => {
+  switch (product) {
+    case 'Cigarette':
+      return preferences?.nicotineStrengthMgPerCigarette || 12;
+    case 'Vape (Puff)': {
+      const nicotinePerMl = preferences?.nicotineStrengthMgPerMl === 3 ? 25 : (preferences?.nicotineStrengthMgPerMl || 25);
+      const puffsPerPod = preferences?.vapePuffsPerPod || 500;
+      return puffsPerPod > 0 ? Number(((nicotinePerMl * 2) / puffsPerPod).toFixed(2)) : 0.1;
+    }
+    case 'Heated Tobacco':
+      return preferences?.nicotineStrengthMgPerHeatedTobacco || 6;
+    case 'Nicotine Pouch':
+      // If user has old default value (21), use new default (8)
+      return preferences?.nicotineStrengthMgPerPouch === 21 ? 8 : (preferences?.nicotineStrengthMgPerPouch || 8);
+    default:
+      return 0;
+  }
+};
+
 // Spacing constants for consistent design
 const SPACING = {
   xs: 4,
@@ -245,9 +265,9 @@ export default function DashboardScreen() {
           totalNicotine += preferences?.nicotineStrengthMgPerCigarette || 0;
           break;
         case 'Vape (Puff)': {
-          const nicotinePerMl = preferences?.nicotineStrengthMgPerMl || 0;
-          const puffsPerPod = preferences?.vapePuffsPerPod || 1;
-          const vapeNicotinePerPuff = puffsPerPod > 0 ? (nicotinePerMl * 2) / puffsPerPod : 0;
+          const nicotinePerMl = preferences?.nicotineStrengthMgPerMl === 3 ? 25 : (preferences?.nicotineStrengthMgPerMl || 25);
+          const puffsPerPod = preferences?.vapePuffsPerPod || 500;
+          const vapeNicotinePerPuff = puffsPerPod > 0 ? (nicotinePerMl * 2) / puffsPerPod : 0.1;
           totalNicotine += vapeNicotinePerPuff;
           break;
         }
@@ -255,7 +275,7 @@ export default function DashboardScreen() {
           totalNicotine += preferences?.nicotineStrengthMgPerHeatedTobacco || 0;
           break;
         case 'Nicotine Pouch':
-          totalNicotine += preferences?.nicotineStrengthMgPerPouch || 0;
+          totalNicotine += preferences?.nicotineStrengthMgPerPouch === 21 ? 8 : (preferences?.nicotineStrengthMgPerPouch || 8);
           break;
       }
     });
@@ -323,9 +343,9 @@ export default function DashboardScreen() {
 
   const consumptionTypes = [
     { name: 'Cigarette', icon: 'smoking', count: consumptionCounts.Cigarette },
-    { name: 'Vape (Puff)', icon: 'wind', count: consumptionCounts['Vape (Puff)'] },
-    { name: 'Heated Tobacco', icon: 'fire-alt', count: consumptionCounts['Heated Tobacco'] },
     { name: 'Nicotine Pouch', icon: 'grip-lines', count: consumptionCounts['Nicotine Pouch'] },
+    { name: 'Heated Tobacco', icon: 'fire-alt', count: consumptionCounts['Heated Tobacco'] },
+    { name: 'Vape (Puff)', icon: 'wind', count: consumptionCounts['Vape (Puff)'] },
   ];
 
   const size = Math.min(width * 0.58, 280); // Max size for larger screens
@@ -339,9 +359,14 @@ export default function DashboardScreen() {
     <ThemedView style={{ flex: 1 }}>
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom + SPACING.xl }]}
+        contentContainerStyle={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
         showsVerticalScrollIndicator={false}
       >
+        {/* Daily Intake Section */}
+        <View style={styles.dailyIntakeHeader}>
+          <ThemedText style={styles.logsSectionTitle}>Daily Nicotine Intake</ThemedText>
+        </View>
+
         {/* Progress Circle with Status */}
         <View style={styles.progressWrapper}>
             <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
@@ -385,27 +410,31 @@ export default function DashboardScreen() {
         {/* Consumption Grid */}
         <View style={styles.gridContainer}>
           <View style={styles.gridRow}>
-            <ConsumptionCard 
-              style={styles.cardTopLeft} 
-              type={consumptionTypes[0]} 
-              onPress={() => handleAddConsumption('Cigarette')} 
+            <ConsumptionCard
+              style={styles.cardTopLeft}
+              type={consumptionTypes[0]}
+              onPress={() => handleAddConsumption('Cigarette')}
+              nicotineAmount={getNicotineAmount('Cigarette', preferences)}
             />
-            <ConsumptionCard 
-              style={styles.cardTopRight} 
-              type={consumptionTypes[1]} 
-              onPress={() => handleAddConsumption('Vape (Puff)')} 
+            <ConsumptionCard
+              style={styles.cardTopRight}
+              type={consumptionTypes[1]}
+              onPress={() => handleAddConsumption('Nicotine Pouch')}
+              nicotineAmount={getNicotineAmount('Nicotine Pouch', preferences)}
             />
           </View>
           <View style={styles.gridRow}>
-            <ConsumptionCard 
-              style={styles.cardBottomLeft} 
-              type={consumptionTypes[2]} 
-              onPress={() => handleAddConsumption('Heated Tobacco')} 
+            <ConsumptionCard
+              style={styles.cardBottomLeft}
+              type={consumptionTypes[2]}
+              onPress={() => handleAddConsumption('Heated Tobacco')}
+              nicotineAmount={getNicotineAmount('Heated Tobacco', preferences)}
             />
-            <ConsumptionCard 
-              style={styles.cardBottomRight} 
-              type={consumptionTypes[3]} 
-              onPress={() => handleAddConsumption('Nicotine Pouch')} 
+            <ConsumptionCard
+              style={styles.cardBottomRight}
+              type={consumptionTypes[3]}
+              onPress={() => handleAddConsumption('Vape (Puff)')}
+              nicotineAmount={getNicotineAmount('Vape (Puff)', preferences)}
             />
           </View>
         </View>
@@ -415,8 +444,13 @@ export default function DashboardScreen() {
           <View style={styles.logsSectionHeader}>
             <ThemedText style={styles.logsSectionTitle}>Recent Activity</ThemedText>
             {consumptionLog.length > 3 && (
-              <TouchableOpacity 
-                onPress={() => router.push('/activity-logs' as any)}
+              <TouchableOpacity
+                onPress={() => {
+                  if (Platform.OS !== 'web') {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }
+                  router.push('/activity-logs');
+                }}
                 accessibilityLabel="View all activity logs"
                 accessibilityRole="button"
               >
@@ -443,6 +477,7 @@ export default function DashboardScreen() {
                   <LogItem
                     key={`${log.timestamp}-${index}`}
                     log={log}
+                    nicotineAmount={getNicotineAmount(log.product, preferences)}
                     onDelete={() => handleDeleteLog(index)}
                     colorScheme={colorScheme}
                     themeColors={themeColors}
@@ -456,14 +491,16 @@ export default function DashboardScreen() {
   );
 }
 
-const ConsumptionCard = ({ 
-  type, 
-  onPress, 
-  style 
-}: { 
-  type: { name: string, icon: any, count: number }, 
-  onPress: () => void, 
-  style: any 
+const ConsumptionCard = ({
+  type,
+  onPress,
+  style,
+  nicotineAmount
+}: {
+  type: { name: string, icon: any, count: number },
+  onPress: () => void,
+  style: any,
+  nicotineAmount: number
 }) => {
   const colorScheme = useColorScheme() ?? 'light';
   const themeColors = Colors[colorScheme];
@@ -487,14 +524,14 @@ const ConsumptionCard = ({
 
   return (
     <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={[
-          styles.card, 
-          { 
+          styles.card,
+          {
             backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF',
-          }, 
+          },
           style
-        ]} 
+        ]}
         onPress={onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
@@ -507,6 +544,9 @@ const ConsumptionCard = ({
           <FontAwesome5 name={type.icon} size={24} color={themeColors.tint} />
         </View>
         <ThemedText style={styles.cardText}>{type.name}</ThemedText>
+        <ThemedText style={[styles.cardNicotine, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
+          {nicotineAmount} mg
+        </ThemedText>
         <ThemedText style={[styles.cardCount, { color: themeColors.tint }]}>{type.count}</ThemedText>
         {type.count > 0 && (
           <View style={[styles.badge, { backgroundColor: themeColors.tint }]}>
@@ -520,11 +560,13 @@ const ConsumptionCard = ({
 
 const LogItem = ({
   log,
+  nicotineAmount,
   onDelete,
   colorScheme,
   themeColors
 }: {
   log: ConsumptionLog,
+  nicotineAmount: number,
   onDelete: () => void,
   colorScheme: 'light' | 'dark',
   themeColors: any
@@ -557,6 +599,9 @@ const LogItem = ({
       <View style={styles.logTextContainer}>
         <ThemedText style={styles.logProduct}>{log.product}</ThemedText>
         <ThemedText style={styles.logTime}>{dateStr} at {timeStr}</ThemedText>
+        <ThemedText style={[styles.logNicotine, { color: themeColors.tint }]}>
+          {nicotineAmount} mg
+        </ThemedText>
       </View>
       <TouchableOpacity
         onPress={onDelete}
@@ -633,34 +678,22 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   cardTopLeft: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 80,
+    borderRadius: 24,
     marginRight: gap / 2,
     marginBottom: gap / 2,
   },
   cardTopRight: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderBottomRightRadius: 24,
-    borderBottomLeftRadius: 80,
+    borderRadius: 24,
     marginLeft: gap / 2,
     marginBottom: gap / 2,
   },
   cardBottomLeft: {
-    borderBottomLeftRadius: 24,
-    borderTopLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    borderTopRightRadius: 80,
+    borderRadius: 24,
     marginRight: gap / 2,
     marginTop: gap / 2,
   },
   cardBottomRight: {
-    borderBottomRightRadius: 24,
-    borderTopRightRadius: 24,
-    borderBottomLeftRadius: 24,
-    borderTopLeftRadius: 80,
+    borderRadius: 24,
     marginLeft: gap / 2,
     marginTop: gap / 2,
   },
@@ -668,6 +701,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginTop: SPACING.xs,
+    textAlign: 'center',
+  },
+  cardNicotine: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
     textAlign: 'center',
   },
   cardCount: {
@@ -691,9 +730,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
+  dailyIntakeHeader: {
+    marginTop: -SPACING.lg,
+    marginBottom: SPACING.md,
+  },
   logsSection: {
     marginTop: SPACING.lg,
-    marginBottom: SPACING.xl,
+    marginBottom: 0,
   },
   logsSectionHeader: {
     flexDirection: 'row',
@@ -752,6 +795,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     opacity: 0.6,
     marginTop: 2,
+  },
+  logNicotine: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 4,
   },
   deleteIconButton: {
     padding: SPACING.sm,

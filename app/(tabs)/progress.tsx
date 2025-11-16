@@ -149,9 +149,9 @@ export default function ProgressScreen() {
                     totalNicotine += appState.preferences?.nicotineStrengthMgPerCigarette || 12;
                     break;
                 case 'Vape (Puff)': {
-                    const nicotinePerMl = appState.preferences?.nicotineStrengthMgPerMl || 3;
+                    const nicotinePerMl = appState.preferences?.nicotineStrengthMgPerMl === 3 ? 25 : (appState.preferences?.nicotineStrengthMgPerMl || 25);
                     const puffsPerPod = appState.preferences?.vapePuffsPerPod || 500;
-                    const vapeNicotinePerPuff = puffsPerPod > 0 ? (nicotinePerMl * 2) / puffsPerPod : 0;
+                    const vapeNicotinePerPuff = puffsPerPod > 0 ? (nicotinePerMl * 2) / puffsPerPod : 0.1;
                     totalNicotine += vapeNicotinePerPuff;
                     break;
                 }
@@ -159,7 +159,8 @@ export default function ProgressScreen() {
                     totalNicotine += appState.preferences?.nicotineStrengthMgPerHeatedTobacco || 6;
                     break;
                 case 'Nicotine Pouch':
-                    totalNicotine += appState.preferences?.nicotineStrengthMgPerPouch || 21;
+                    // If user has old default value (21), use new default (8)
+                    totalNicotine += appState.preferences?.nicotineStrengthMgPerPouch === 21 ? 8 : (appState.preferences?.nicotineStrengthMgPerPouch || 8);
                     break;
             }
         });
@@ -593,13 +594,13 @@ export default function ProgressScreen() {
             label: 'Money Saved',
             value: moneySaved,
             iconName: 'wallet',
-            gradient: ['#0e7490', '#0c5a6e']
+            gradient: ['#10b981', '#059669']
         },
         {
             label: 'Life Time Gained',
             value: lifeTimeGained,
             iconName: 'heartbeat',
-            gradient: ['#b91c1c', '#991b1b']
+            gradient: ['#ef4444', '#dc2626']
         },
     ];
 
@@ -624,7 +625,7 @@ export default function ProgressScreen() {
                     <View style={[styles.iconContainer, { backgroundColor: `${gradient[0]}20` }]}>
                         <FontAwesome5 name={iconName} size={24} color={gradient[0]} />
                     </View>
-                    <ThemedText style={[styles.cardValue, { color: gradient[0] }]} numberOfLines={1}>{value}</ThemedText>
+                    <ThemedText style={[styles.cardValue, { color: gradient[0] }]} numberOfLines={2}>{value}</ThemedText>
                     <ThemedText style={[styles.cardLabel, { color: isDark ? '#9CA3AF' : '#6B7280' }]} numberOfLines={2}>
                         {label}
                     </ThemedText>
@@ -929,10 +930,10 @@ export default function ProgressScreen() {
                                     transform: [{ scale: scaleAnim }],
                                 }
                             ]}>
-                                <View style={[styles.iconContainer, { backgroundColor: '#06b6d420' }]}>
-                                    <MaterialCommunityIcons name="check-circle" size={28} color="#06b6d4" />
+                                <View style={[styles.iconContainer, { backgroundColor: '#f59e0b20' }]}>
+                                    <MaterialCommunityIcons name="check-circle" size={28} color="#f59e0b" />
                                 </View>
-                                <ThemedText style={[styles.cardValue, { color: '#06b6d4' }]}>
+                                <ThemedText style={[styles.cardValue, { color: '#f59e0b' }]}>
                                     {daysWithinLimits}
                                 </ThemedText>
                                 <ThemedText style={[styles.cardLabel, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
@@ -948,10 +949,10 @@ export default function ProgressScreen() {
                                     transform: [{ scale: scaleAnim }],
                                 }
                             ]}>
-                                <View style={[styles.iconContainer, { backgroundColor: '#d81b6020' }]}>
-                                    <MaterialCommunityIcons name="smoking-off" size={28} color="#d81b60" />
+                                <View style={[styles.iconContainer, { backgroundColor: '#8b5cf620' }]}>
+                                    <MaterialCommunityIcons name="smoking-off" size={28} color="#8b5cf6" />
                                 </View>
-                                <ThemedText style={[styles.cardValue, { color: '#d81b60' }]}>
+                                <ThemedText style={[styles.cardValue, { color: '#8b5cf6' }]}>
                                     {smokeFreeDays}
                                 </ThemedText>
                                 <ThemedText style={[styles.cardLabel, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
@@ -1008,7 +1009,10 @@ export default function ProgressScreen() {
                         </View>
                         <View style={[
                             styles.chartCard,
-                            { backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF' }
+                            {
+                                backgroundColor: colorScheme === 'dark' ? '#1C1F20' : '#FFFFFF',
+                                paddingBottom: chartView === 'month' ? 12 : 20
+                            }
                         ]}>
                             {/* Toggle Pills */}
                             <View style={[styles.pillsTabsContainer, {
@@ -1155,17 +1159,19 @@ const WeeklyBars = ({ data, colorScheme }: { data: any[], colorScheme: 'light' |
                                     fill={barColor}
                                     opacity="0.85"
                                 />
-                                {/* Nicotine value */}
-                                <SvgText
-                                    x={x + barWidth / 2}
-                                    y={y - 10}
-                                    fontSize="11"
-                                    fill={colorScheme === 'dark' ? '#FFFFFF' : '#000000'}
-                                    textAnchor="middle"
-                                    fontWeight="bold"
-                                >
-                                    {day.nicotine}
-                                </SvgText>
+                                {/* Nicotine value - only show if greater than 0 */}
+                                {day.nicotine > 0 && (
+                                    <SvgText
+                                        x={x + barWidth / 2}
+                                        y={y - 10}
+                                        fontSize="11"
+                                        fill={colorScheme === 'dark' ? '#FFFFFF' : '#000000'}
+                                        textAnchor="middle"
+                                        fontWeight="bold"
+                                    >
+                                        {day.nicotine}
+                                    </SvgText>
+                                )}
                                 {/* Day name */}
                                 <SvgText
                                     x={x + barWidth / 2}
@@ -1196,113 +1202,230 @@ const WeeklyBars = ({ data, colorScheme }: { data: any[], colorScheme: 'light' |
     );
 };
 
-// Monthly Bars Component - Daily nicotine consumption for current month
+// Monthly Heatmap Component - Calendar view with color intensity
 const MonthlyBars = ({ data, colorScheme }: { data: any[], colorScheme: 'light' | 'dark' }) => {
-    const scrollRef = useRef<ScrollView>(null);
-    
     if (data.length === 0) return <ThemedText style={{ textAlign: 'center', padding: 20 }}>No data yet</ThemedText>;
     
-    const maxValue = Math.max(...data.map(d => d.nicotine), 5);
-    const padding = 20;
-    const barSpacing = 4;
-    const barWidth = Math.max(8, Math.min(20, (chartWidth - padding * 2) / data.length));
-    const graphHeight = 200;
+    const today = new Date();
+    const todayDate = format(today, 'd');
+    const monthStart = startOfMonth(today);
+    const firstDayOfWeek = monthStart.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const adjustedFirstDay = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1; // Adjust so Monday = 0
     
-    // Find today's index and auto-scroll to it
-    const todayDate = format(new Date(), 'd');
-    const todayIndex = data.findIndex(d => d.date === todayDate);
+    // Days of week labels
+    const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     
-    useEffect(() => {
-        if (scrollRef.current && todayIndex !== -1) {
-            // Calculate scroll position to center today's bar
-            const scrollX = Math.max(0, (todayIndex * (barWidth + barSpacing)) - (chartWidth / 3));
-            setTimeout(() => {
-                scrollRef.current?.scrollTo({ x: scrollX, animated: true });
-            }, 300);
+    // Calculate max nicotine for intensity scaling
+    const maxNicotine = Math.max(...data.map(d => d.nicotine), 1);
+    
+    // Get color based on consumption vs limit
+    const getCellColor = (dayData: any) => {
+        if (!dayData) {
+            // Future days or no data
+            return colorScheme === 'dark' ? '#1C1F20' : '#F3F4F6';
         }
-    }, [todayIndex, barWidth, barSpacing]);
+        
+        if (dayData.count === 0) {
+            // No consumption - excellent!
+            return '#10b981'; // Green
+        }
+        
+        if (dayData.isWithinLimits) {
+            // Within limits - calculate intensity
+            const intensity = dayData.nicotine / maxNicotine;
+            if (intensity < 0.3) return '#86efac'; // Light green
+            if (intensity < 0.6) return '#4ade80'; // Medium green
+            return '#22c55e'; // Dark green
+        } else {
+            // Over limits - calculate intensity
+            const overAmount = (dayData.nicotine - dayData.target) / dayData.target;
+            if (overAmount < 0.2) return '#fb923c'; // Light red/orange
+            if (overAmount < 0.5) return '#f87171'; // Medium red
+            return '#ef4444'; // Dark red
+        }
+    };
+    
+    // Cell size
+    const cellSize = (chartWidth - 80) / 7;
+    const cellGap = 4;
     
     return (
-        <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-            <View style={{ paddingHorizontal: 20, paddingVertical: 16, alignItems: 'center' }}>
-                <ThemedText style={{ fontSize: 13, fontWeight: '600', marginBottom: 8 }}>
-                    Daily Nicotine Intake - {format(new Date(), 'MMMM yyyy')}
+        <View style={{ alignItems: 'center', paddingTop: 16, paddingBottom: 0 }}>
+            <View style={{ paddingHorizontal: 20, paddingBottom: 20, alignItems: 'center' }}>
+                <ThemedText style={{ fontSize: 13, fontWeight: '600', marginBottom: 16 }}>
+                    {format(today, 'MMMM yyyy')}
                 </ThemedText>
-                <ThemedText style={{ fontSize: 11, opacity: 0.6, marginBottom: 12, fontWeight: '500' }}>
-                    {todayIndex !== -1 ? `Today: Day ${todayDate} • ` : ''}Swipe to see all {data.length} days
-                </ThemedText>
-                <View style={{ flexDirection: 'row', gap: 16, justifyContent: 'center' }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: '#10b981' }} />
-                        <ThemedText style={{ fontSize: 11, opacity: 0.7 }}>Within Limits</ThemedText>
+                
+                {/* Gradient Legend with Markers - Simplified */}
+                <View style={{ alignItems: 'center', width: '100%', maxWidth: 280 }}>
+                    <View style={{ flexDirection: 'row', width: '100%', height: 26, borderRadius: 6, overflow: 'hidden', marginBottom: 8 }}>
+                        {/* Green gradient - Within limits */}
+                        <View style={{ flex: 2, backgroundColor: '#10b981' }} />
+                        <View style={{ flex: 2, backgroundColor: '#4ade80' }} />
+                        <View style={{ flex: 2, backgroundColor: '#86efac' }} />
+                        {/* Orange/Red gradient - Over limits */}
+                        <View style={{ flex: 2, backgroundColor: '#fb923c' }} />
+                        <View style={{ flex: 2, backgroundColor: '#f87171' }} />
+                        <View style={{ flex: 2, backgroundColor: '#ef4444' }} />
                     </View>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: '#ef4444' }} />
-                        <ThemedText style={{ fontSize: 11, opacity: 0.7 }}>Over Limits</ThemedText>
+                    
+                    {/* Markers below gradient - centered with colors */}
+                    <View style={{ flexDirection: 'row', width: '100%' }}>
+                        {/* 0mg - Dark Green */}
+                        <View style={{ flex: 2, alignItems: 'center' }}>
+                            <ThemedText style={{ fontSize: 10, fontWeight: '700', opacity: 0.9, color: '#10b981' }}>
+                                0mg
+                            </ThemedText>
+                        </View>
+                        {/* Within - Medium Green */}
+                        <View style={{ flex: 2, alignItems: 'center' }}>
+                            <ThemedText style={{ fontSize: 10, fontWeight: '700', opacity: 0.9, color: '#4ade80' }}>
+                                Within
+                            </ThemedText>
+                            <ThemedText style={{ fontSize: 8, opacity: 0.6 }}>
+                                Limit
+                            </ThemedText>
+                        </View>
+                        {/* High - Light Green */}
+                        <View style={{ flex: 2, alignItems: 'center' }}>
+                            <ThemedText style={{ fontSize: 10, fontWeight: '700', opacity: 0.9, color: '#86efac' }}>
+                                High
+                            </ThemedText>
+                            <ThemedText style={{ fontSize: 8, opacity: 0.6 }}>
+                                Within
+                            </ThemedText>
+                        </View>
+                        {/* Slightly Over - Orange */}
+                        <View style={{ flex: 2, alignItems: 'center' }}>
+                            <ThemedText style={{ fontSize: 10, fontWeight: '700', opacity: 0.9, color: '#fb923c' }}>
+                                Slight
+                            </ThemedText>
+                            <ThemedText style={{ fontSize: 8, opacity: 0.6 }}>
+                                Over
+                            </ThemedText>
+                        </View>
+                        {/* Moderately Over - Light Red */}
+                        <View style={{ flex: 2, alignItems: 'center' }}>
+                            <ThemedText style={{ fontSize: 10, fontWeight: '700', opacity: 0.9, color: '#f87171' }}>
+                                Over
+                            </ThemedText>
+                            <ThemedText style={{ fontSize: 8, opacity: 0.6 }}>
+                                Limit
+                            </ThemedText>
+                        </View>
+                        {/* Very High - Dark Red */}
+                        <View style={{ flex: 2, alignItems: 'center' }}>
+                            <ThemedText style={{ fontSize: 10, fontWeight: '700', opacity: 0.9, color: '#ef4444' }}>
+                                Very
+                            </ThemedText>
+                            <ThemedText style={{ fontSize: 8, opacity: 0.6 }}>
+                                High
+                            </ThemedText>
+                        </View>
                     </View>
                 </View>
             </View>
-            <ScrollView
-                ref={scrollRef}
-                horizontal
-                showsHorizontalScrollIndicator={true}
-                contentContainerStyle={{ paddingHorizontal: padding }}
-            >
-                <Svg width={data.length * (barWidth + barSpacing) + padding * 2} height={270}>
-                    {data.map((day, index) => {
-                        const height = Math.max((day.nicotine / maxValue) * graphHeight, 8);
-                        const x = index * (barWidth + barSpacing) + padding;
-                        const y = graphHeight - height + 20;
-                        const barColor = day.isWithinLimits ? '#10b981' : '#ef4444';
-                        const isToday = format(new Date(), 'd') === day.date;
+            
+            {/* Calendar Grid */}
+            <View style={{ paddingHorizontal: 20 }}>
+                {/* Days of week header */}
+                <View style={{ flexDirection: 'row', marginBottom: 8 }}>
+                    {daysOfWeek.map((day, index) => (
+                        <View
+                            key={index}
+                            style={{
+                                width: cellSize,
+                                marginRight: index < 6 ? cellGap : 0,
+                                alignItems: 'center',
+                            }}
+                        >
+                            <ThemedText style={{ fontSize: 10, fontWeight: '600', opacity: 0.6 }}>
+                                {day}
+                            </ThemedText>
+                        </View>
+                    ))}
+                </View>
+                
+                {/* Calendar cells */}
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                    {/* Empty cells for days before month starts */}
+                    {Array.from({ length: adjustedFirstDay }).map((_, index) => (
+                        <View
+                            key={`empty-${index}`}
+                            style={{
+                                width: cellSize,
+                                height: cellSize,
+                                marginRight: (index % 7) < 6 ? cellGap : 0,
+                                marginBottom: cellGap,
+                            }}
+                        />
+                    ))}
+                    
+                    {/* Days of the month */}
+                    {data.map((dayData, index) => {
+                        const isToday = dayData.date === todayDate;
+                        const cellColor = getCellColor(dayData);
+                        const position = (adjustedFirstDay + index) % 7;
                         
                         return (
-                            <G key={index}>
-                                {/* Consumption bar */}
-                                <Rect
-                                    x={x}
-                                    y={y}
-                                    width={barWidth}
-                                    height={height}
-                                    rx="4"
-                                    fill={barColor}
-                                    opacity={isToday ? '1' : '0.9'}
-                                    stroke={isToday ? barColor : 'none'}
-                                    strokeWidth={isToday ? '2' : '0'}
-                                />
-                                {/* Nicotine value - only show for today or if bar is tall enough */}
-                                {(isToday || height > 30) && barWidth > 12 && (
-                                    <SvgText
-                                        x={x + barWidth / 2}
-                                        y={y - 6}
-                                        fontSize="9"
-                                        fill={colorScheme === 'dark' ? '#FFFFFF' : '#000000'}
-                                        textAnchor="middle"
-                                        fontWeight="bold"
-                                    >
-                                        {day.nicotine}
-                                    </SvgText>
-                                )}
-                                {/* Date - show every 3rd day or today */}
-                                {(index % 3 === 0 || isToday) && (
-                                    <SvgText
-                                        x={x + barWidth / 2}
-                                        y={graphHeight + 40}
-                                        fontSize="10"
-                                        fill={isToday ? (colorScheme === 'dark' ? '#FFFFFF' : '#000000') : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
-                                        textAnchor="middle"
-                                        fontWeight={isToday ? 'bold' : 'normal'}
-                                    >
-                                        {day.date}
-                                    </SvgText>
-                                )}
-                            </G>
+                            <Pressable
+                                key={index}
+                                style={{
+                                    width: cellSize,
+                                    height: cellSize,
+                                    marginRight: position < 6 ? cellGap : 0,
+                                    marginBottom: cellGap,
+                                    borderRadius: 8,
+                                    backgroundColor: cellColor,
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    borderWidth: isToday ? 2 : 0,
+                                    borderColor: isToday ? '#9CA3AF' : 'transparent',
+                                    shadowColor: isToday ? '#000' : 'transparent',
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: isToday ? 0.3 : 0,
+                                    shadowRadius: 4,
+                                    elevation: isToday ? 4 : 0,
+                                }}
+                            >
+                                <ThemedText
+                                    style={{
+                                        fontSize: 12,
+                                        fontWeight: isToday ? 'bold' : '600',
+                                        color: '#FFFFFF',
+                                    }}
+                                >
+                                    {dayData.date}
+                                </ThemedText>
+                            </Pressable>
                         );
                     })}
-                </Svg>
-            </ScrollView>
+                </View>
+            </View>
         </View>
     );
+};
+
+// Helper function to get phase icon
+const getPhaseIcon = (phaseNumber: number, isCompleted: boolean, isCurrent: boolean) => {
+    if (isCompleted) return 'check';
+    if (isCurrent) return 'lightning-bolt';
+    
+    // Icons for future phases based on phase number
+    switch (phaseNumber) {
+        case 1:
+            return 'flag'; // Initial Adaptation
+        case 2:
+            return 'trending-down'; // Adjustment to Weaning
+        case 3:
+            return 'shield-check'; // Control Reinforcement
+        case 4:
+            return 'run-fast'; // Almost Free
+        case 5:
+            return 'medal'; // Nicotine-Free Consolidation
+        default:
+            return 'circle-outline';
+    }
 };
 
 // Phase Progress Component
@@ -1333,15 +1456,32 @@ const PhaseProgress = ({ phases, currentDay, colorScheme }: {
                 const isCurrent = index === currentPhaseIndex;
                 const progressInPhase = isCurrent ? ((currentDay - tempCumulativeDays) / phase.durationDays) * 100 : 0;
                 
+                // Define colors for each phase
+                const phaseColors = [
+                    { bg: '#3B82F6', light: '#DBEAFE' }, // Blue
+                    { bg: '#8B5CF6', light: '#EDE9FE' }, // Purple
+                    { bg: '#EC4899', light: '#FCE7F3' }, // Pink
+                    { bg: '#F59E0B', light: '#FEF3C7' }, // Amber
+                    { bg: '#10B981', light: '#D1FAE5' }, // Green
+                ];
+                const phaseColor = phaseColors[index % phaseColors.length];
+                
                 return (
                     <View key={index} style={[
                         styles.phaseCard,
                         {
                             backgroundColor: isCurrent
-                                ? colorScheme === 'dark' ? '#1C1F20' : '#F0F9FF'
-                                : 'transparent',
-                            borderLeftWidth: isCurrent ? 4 : 0,
-                            borderLeftColor: isCurrent ? Colors[colorScheme].tint : 'transparent'
+                                ? colorScheme === 'dark' ? '#1C1F20' : phaseColor.light
+                                : colorScheme === 'dark' ? '#1C1F2080' : '#FFFFFF',
+                            borderWidth: isCurrent ? 2 : 1,
+                            borderColor: isCurrent
+                                ? phaseColor.bg
+                                : colorScheme === 'dark' ? '#374151' : '#E5E7EB',
+                            shadowColor: isCurrent ? phaseColor.bg : '#000',
+                            shadowOffset: { width: 0, height: isCurrent ? 4 : 2 },
+                            shadowOpacity: isCurrent ? 0.2 : 0.08,
+                            shadowRadius: isCurrent ? 12 : 8,
+                            elevation: isCurrent ? 6 : 2,
                         }
                     ]}>
                         <View style={styles.phaseRow}>
@@ -1352,29 +1492,22 @@ const PhaseProgress = ({ phases, currentDay, colorScheme }: {
                                         backgroundColor: isCompleted
                                             ? '#10b981'
                                             : isCurrent
-                                                ? Colors[colorScheme].tint
+                                                ? phaseColor.bg
                                                 : colorScheme === 'dark' ? '#374151' : '#E5E7EB',
-                                        borderWidth: isCurrent ? 3 : 0,
-                                        borderColor: isCurrent ? `${Colors[colorScheme].tint}40` : 'transparent'
+                                        borderWidth: 0,
+                                        shadowColor: isCompleted || isCurrent ? (isCompleted ? '#10b981' : phaseColor.bg) : 'transparent',
+                                        shadowOffset: { width: 0, height: 2 },
+                                        shadowOpacity: 0.3,
+                                        shadowRadius: 6,
+                                        elevation: isCompleted || isCurrent ? 4 : 0,
                                     }
                                 ]}>
-                                    {isCompleted && (
-                                        <MaterialCommunityIcons name="check" size={18} color="#FFFFFF" />
-                                    )}
-                                    {isCurrent && (
-                                        <MaterialCommunityIcons name="lightning-bolt" size={18} color="#FFFFFF" />
-                                    )}
+                                    <MaterialCommunityIcons
+                                        name={getPhaseIcon(phase.phase, isCompleted, isCurrent)}
+                                        size={20}
+                                        color={isCompleted || isCurrent ? '#FFFFFF' : (colorScheme === 'dark' ? '#6B7280' : '#9CA3AF')}
+                                    />
                                 </View>
-                                {index < phases.length - 1 && (
-                                    <View style={[
-                                        styles.phaseLine,
-                                        {
-                                            backgroundColor: index < currentPhaseIndex
-                                                ? '#10b981'
-                                                : colorScheme === 'dark' ? '#374151' : '#E5E7EB'
-                                        }
-                                    ]} />
-                                )}
                             </View>
                             <View style={styles.phaseInfo}>
                                 <View style={styles.phaseHeader}>
@@ -1382,37 +1515,66 @@ const PhaseProgress = ({ phases, currentDay, colorScheme }: {
                                         styles.phaseName,
                                         {
                                             fontWeight: isCurrent ? 'bold' : '600',
-                                            fontSize: isCurrent ? 16 : 15
+                                            fontSize: isCurrent ? 17 : 15,
+                                            color: isCurrent
+                                                ? colorScheme === 'dark' ? '#FFFFFF' : phaseColor.bg
+                                                : colorScheme === 'dark' ? '#E5E7EB' : '#1F2937'
                                         }
                                     ]}>
                                         Phase {phase.phase}: {phase.phaseName}
                                     </ThemedText>
                                     {isCompleted && (
-                                        <MaterialCommunityIcons name="check-circle" size={20} color="#10b981" />
+                                        <View style={[styles.completedBadge, { backgroundColor: '#10b98120' }]}>
+                                            <ThemedText style={[styles.completedText, { color: '#10b981' }]}>
+                                                Completed
+                                            </ThemedText>
+                                        </View>
                                     )}
                                 </View>
-                                <ThemedText style={[
-                                    styles.phaseDetail,
-                                    { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }
-                                ]}>
-                                    {phase.durationDays} days • Target: {phase.nicotineGoalMg}mg nicotine
-                                </ThemedText>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 6 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                        <MaterialCommunityIcons
+                                            name="calendar-clock"
+                                            size={14}
+                                            color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                                        />
+                                        <ThemedText style={[
+                                            styles.phaseDetail,
+                                            { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280', marginBottom: 0 }
+                                        ]}>
+                                            {phase.durationDays} days
+                                        </ThemedText>
+                                    </View>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                        <MaterialCommunityIcons
+                                            name="target"
+                                            size={14}
+                                            color={colorScheme === 'dark' ? '#9CA3AF' : '#6B7280'}
+                                        />
+                                        <ThemedText style={[
+                                            styles.phaseDetail,
+                                            { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280', marginBottom: 0 }
+                                        ]}>
+                                            {phase.nicotineGoalMg}mg
+                                        </ThemedText>
+                                    </View>
+                                </View>
                                 {isCurrent && (
                                     <View style={styles.phaseProgressContainer}>
                                         <View style={styles.phaseProgressInfo}>
                                             <ThemedText style={[styles.progressLabel, { color: colorScheme === 'dark' ? '#9CA3AF' : '#6B7280' }]}>
                                                 Progress
                                             </ThemedText>
-                                            <ThemedText style={[styles.progressPercent, { color: Colors[colorScheme].tint }]}>
+                                            <ThemedText style={[styles.progressPercent, { color: phaseColor.bg }]}>
                                                 {Math.round(progressInPhase)}%
                                             </ThemedText>
                                         </View>
-                                        <View style={styles.phaseProgressBar}>
+                                        <View style={[styles.phaseProgressBar, { backgroundColor: colorScheme === 'dark' ? '#374151' : '#E5E7EB' }]}>
                                             <View style={[
                                                 styles.phaseProgressFill,
                                                 {
                                                     width: `${progressInPhase}%`,
-                                                    backgroundColor: Colors[colorScheme].tint
+                                                    backgroundColor: phaseColor.bg
                                                 }
                                             ]} />
                                         </View>
@@ -1882,5 +2044,17 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255, 255, 255, 0.2)',
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    completedBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+    },
+    completedText: {
+        fontSize: 11,
+        fontWeight: '600',
     },
 });
